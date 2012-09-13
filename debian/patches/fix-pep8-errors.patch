@@ -1,0 +1,30 @@
+commit 95345f28deeb421ace7a3e3854fd4eb0075986bf
+Author: Chuck Short <chuck.short@canonical.com>
+Date:   Wed Jun 27 13:25:00 2012 -0400
+
+    Fix pep8 errors
+    
+    Fix pep8 errors with 1.2
+    
+    Change-Id: I89afaab4f70207b5367ec3fcf8877538eb3bb703
+    Signed-off-by: Chuck Short <chuck.short@canonical.com>
+
+diff --git a/tests/v1/fakes.py b/tests/v1/fakes.py
+index d93c9a4..d1bde89 100644
+--- a/tests/v1/fakes.py
++++ b/tests/v1/fakes.py
+@@ -153,11 +153,11 @@ class FakeHTTPClient(base_client.HTTPClient):
+         if action == 'os-attach':
+             assert body[action].keys() == ['instance_uuid', 'mountpoint']
+         elif action == 'os-detach':
+-            assert body[action] == None
++            assert body[action] is None
+         elif action == 'os-reserve':
+-            assert body[action] == None
++            assert body[action] is None
+         elif action == 'os-unreserve':
+-            assert body[action] == None
++            assert body[action] is None
+         elif action == 'os-initialize_connection':
+             assert body[action].keys() == ['connector']
+             return (202, {'connection_info': 'foos'})

@@ -1,0 +1,35 @@
+python-cinderclient (1:0.2-1) experimental; urgency=low
+
+  * First debian release (Close #687518)
+
+ -- Mehdi Abaakouk <sileht@sileht.net>  Thu, 13 Sep 2012 14:04:31 +0200
+
+python-cinderclient (1:0.2.12-0ubuntu1) quantal; urgency=low
+
+  [ Soren Hansen ]
+  * Update debian/watch to account for symbolically named tarballs and
+    use newer URL.
+  * Fix Launchpad URLs in debian/watch.
+
+  [ Chuck Short ]
+  * New upstream version.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Fri, 07 Sep 2012 11:35:32 -0500
+
+python-cinderclient (1:0.2-0ubuntu1) quantal; urgency=low
+
+  * New upstream version.
+  * debian/watch: Update.
+  * debian/control: clean up run time deps and build deps.
+  * debian/control: Add python-provides
+
+  [ Adam Gandelman ]
+  * debian/control: Set Provides: ${python:Provides}.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Thu, 16 Aug 2012 12:03:50 -0500
+
+python-cinderclient (2012.2~f1~20120621.8-0ubuntu1) quantal; urgency=low
+
+  * Initial release.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Wed, 27 Jun 2012 13:32:14 -0400

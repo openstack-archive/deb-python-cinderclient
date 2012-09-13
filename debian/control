@@ -1,0 +1,26 @@
+Source: python-cinderclient
+Section: python
+Priority: optional
+Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
+Uploaders: Mehdi Abaakouk <sileht@sileht.net>
+Build-Depends: debhelper (>= 8.0.0), python-all (>= 2.6),
+ python-setuptools,
+ python-nose,
+ python-httplib2,
+ python-prettytable,
+ python-simplejson,
+ python-mock,
+ pep8,
+ python-sphinx,
+ python-unittest2
+Standards-Version: 3.9.3
+X-Python-Version: >= 2.5
+
+Package: python-cinderclient
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}
+Provides: ${python:Provides}
+Description: python bindings to the OpenStack Volume API
+ This is a client for the OpenStack Volume API. There's a Python API (the
+ ``cinderclient`` module), and a command-line script (``cinder``). Each
+ implements 100% of the OpenStack Volume API.

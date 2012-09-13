@@ -1,0 +1,3 @@
+version=3
+opts="uversionmangle=s/%7E/~/" https://launchpad.net/python-cinderclient/+download https://launchpad.net/python-cinderclient/.*/.*/.*/python-cinderclient-(.*)\.tar\.gz
+http://tarballs.openstack.org/python-cinderclient python-cinderclient-(\d.*).tar.gz
