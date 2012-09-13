@@ -1,0 +1,29 @@
+Description: package shoud not depends on network
+Author: Mehdi Abaakouk <sileht@sileht.net>
+
+--- python-cinderclient-0.2.orig/cinderclient/openstack/common/setup.py
++++ python-cinderclient-0.2/cinderclient/openstack/common/setup.py
+@@ -226,8 +226,8 @@ def get_cmdclass():
+         """Builds the ChangeLog and Authors files from VC first."""
+ 
+         def run(self):
+-            write_git_changelog()
+-            generate_authors()
++            #write_git_changelog()
++            #generate_authors()
+             # sdist.sdist is an old style class, can't use super()
+             sdist.sdist.run(self)
+ 
+@@ -323,8 +323,8 @@ def get_post_version(projectname):
+     revision if there is one, or tag plus number of additional revisions
+     if the current revision has no tag."""
+ 
+-    if os.path.isdir('.git'):
+-        version = _get_git_post_version()
+-        write_versioninfo(projectname, version)
+-        return version
++#    if os.path.isdir('.git'):
++#        version = _get_git_post_version()
++#        write_versioninfo(projectname, version)
++#        return version
+     return open(os.path.join(projectname, 'versioninfo'), 'r').read().strip()

@@ -4,12 +4,20 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-%:
-	dh $@  --with python2
+DEBVERS := $(shell dpkg-parsechangelog | sed -n -e 's/^Version: //p')
+VERSION := $(shell echo '$(DEBVERS)' | sed -e 's/^[[:digit:]]*://' -e 's/[~-].*//')
 
 override_dh_auto_clean:
+	echo $(VERSION) > cinderclient/versioninfo
 	dh_auto_clean
 	rm -f cinderclient/versioninfo
+
+override_dh_auto_configure:
+	echo $(VERSION) > cinderclient/versioninfo
+	dh_auto_configure
+
+%:
+	dh $@  --with python2
 
 get-orig-source:
 	uscan --verbose --force-download --rename --destdir=../build-area
