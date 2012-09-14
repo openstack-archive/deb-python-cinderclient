@@ -18,7 +18,10 @@ X-Python-Version: >= 2.5
 
 Package: python-cinderclient
 Architecture: all
-Depends: ${python:Depends}, ${misc:Depends}
+Depends: ${python:Depends}, ${misc:Depends}, 
+ python-httplib2,
+ python-prettytable,
+ python-simplejson
 Provides: ${python:Provides}
 Description: python bindings to the OpenStack Volume API
  This is a client for the OpenStack Volume API. There's a Python API (the
