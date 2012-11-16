@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
 Uploaders: Mehdi Abaakouk <sileht@sileht.net>
 Build-Depends: debhelper (>= 8.0.0), python-all (>= 2.6),
+ openstack-pkg-tools,
  python-setuptools,
  python-nose,
  python-httplib2,
