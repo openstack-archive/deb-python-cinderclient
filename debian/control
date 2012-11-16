@@ -2,10 +2,14 @@ Source: python-cinderclient
 Section: python
 Priority: optional
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
-Uploaders: Mehdi Abaakouk <sileht@sileht.net>
-Build-Depends: debhelper (>= 8.0.0), python-all (>= 2.6),
- openstack-pkg-tools,
- python-setuptools,
+Uploaders: Julien Danjou <acid@debian.org>,
+           Thomas Goirand <zigo@debian.org>,
+           Ghe Rivero <ghe.rivero@stackops.com>,
+           Mehdi Abaakouk <sileht@sileht.net>
+Build-Depends: debhelper (>= 9),
+ python-all (>= 2.6.6-3~),
+ openstack-pkg-tools
+Build-Depends-Indep: python-setuptools,
  python-nose,
  python-httplib2,
  python-prettytable,
@@ -18,7 +22,6 @@ Standards-Version: 3.9.3
 Homepage: http://launchpad.net/cinder
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
-X-Python-Version: >= 2.5
 
 Package: python-cinderclient
 Architecture: all
@@ -28,6 +31,12 @@ Depends: ${python:Depends}, ${misc:Depends},
  python-simplejson
 Provides: ${python:Provides}
 Description: python bindings to the OpenStack Volume API
- This is a client for the OpenStack Volume API. There's a Python API (the
- ``cinderclient`` module), and a command-line script (``cinder``). Each
- implements 100% of the OpenStack Volume API.
+ Cinder is a block storage as service system for the Openstack cloud computing
+ software suite. It is a direct replacement for nova-volume as a separate
+ project. Cinder users LVM partitions of your volume servers in order to
+ provide iSCSI permanent block storage devices for your virtual machines
+ running on Nova.
+ .
+ This package contains the a client for the OpenStack Volume API. There's a
+ Python API (the "cinderclient" module), and a command-line script ("cinder").
+ Each implements 100% of the OpenStack Volume API.
