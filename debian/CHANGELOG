@@ -1,0 +1,147 @@
+commit 8e48619f96eb4d51c0f05b66ddf73b1338c99f3c
+Merge: f29d1c8 ac7d98b
+Author: Jenkins <jenkins@review.openstack.org>
+Date:   Tue Aug 14 10:05:28 2012 +0000
+
+    Merge "Rename bash completion file from nova to cinder."
+
+commit ac7d98b84f7a5fdfd98df1ffd43da3e5ef110fcf
+Author: Chmouel Boudjnah <chmouel@chmouel.com>
+Date:   Thu Aug 9 14:15:40 2012 +0000
+
+    Rename bash completion file from nova to cinder.
+    
+    Change-Id: I4bcdb482149271253e12f43fb85a663b5c938a14
+
+commit f29d1c8349069a39776cf8ec5cc27ecc7e8d150a
+Author: jakedahn <jake@ansolabs.com>
+Date:   Sun Aug 5 17:32:00 2012 -0700
+
+    Add all_tenants flag to snapshots and volumes.
+    
+      Adds search_opts functionality for the following branches:
+        * https://review.openstack.org/#/c/10750/
+        * https://review.openstack.org/#/c/10855/
+    
+    Change-Id: I8eb69574d3a0510bb6ac8b14b3e2a50a33542f11
+
+commit 778d2d90227771976f9b98ab686dbe1d88154806
+Author: John Griffith <john.griffith@solidfire.com>
+Date:   Tue Jul 24 19:29:02 2012 -0600
+
+    Add missing parameters to volume create body
+    
+    * Fixes bug 1028684
+    * Adds metadata and other parameters to volume create
+    
+    Change-Id: Iaa0c9fd5edac8b48d92ee9722ea5d31d8249cd67
+
+commit 1a32f024ce565d19a362d615cfefda2a59e01f54
+Author: Chuck Short <chuck.short@canonical.com>
+Date:   Wed Jun 27 13:21:26 2012 -0400
+
+    Bump pep8 to 1.2
+    
+    Align it with outher openstack projects.
+    
+    Change-Id: I71a4b3303a354c0483c5da6a786ee6ae39388c77
+    Signed-off-by: Chuck Short <chuck.short@canonical.com>
+
+commit 55464f78214c16dc64ab0afa15c915217c769fd0
+Author: Monty Taylor <mordred@inaugust.com>
+Date:   Mon Jun 25 11:15:53 2012 -0500
+
+    Add post-tag versioning.
+    
+    Change-Id: I527accfa7352ececaabad1213cf2c0b2ef115930
+
+commit 0daf35ad08bc7fb2e2e320fb04b5169ce319fa80
+Author: Anthony Young <sleepsonthefloor@gmail.com>
+Date:   Wed Jun 20 17:09:59 2012 -0700
+
+    Add support for extended_snapshot_attributes
+    
+     * Needed for https://review.openstack.org/#/c/8493/
+    
+    Change-Id: I5beb2638a48776e04bfd95281da838c5b710ea46
+
+commit 12d162d0ee24ea0e0c696f0f11adfd6ac3bee810
+Author: Anthony Young <sleepsonthefloor@gmail.com>
+Date:   Thu May 31 14:47:30 2012 -0700
+
+    Add client work for new cinder extensions.
+    
+     * #5 of blueprint volume-decoupling
+     * Fix pep8
+    
+    Change-Id: Icad4eada0cf16a0f49d9a52e593bede0fc0c5289
+
+commit 7816b3dc31722774be61ddf0047f444dfdff6f05
+Merge: 7547dad 314fa34
+Author: Jenkins <jenkins@review.openstack.org>
+Date:   Sat Jun 16 23:45:11 2012 +0000
+
+    Merge "Auto generate AUTHORS file for python-cinderclient component."
+
+commit 7547dadf8731bcdd166f8f59a427fc1caeda111f
+Author: Clark Boylan <clark.boylan@gmail.com>
+Date:   Fri Jun 8 15:14:06 2012 -0700
+
+    Move docs to doc.
+    
+    To better facilitate the building and publishing of sphinx
+    documentation by Jenkins we are moving all openstack projects with
+    sphinx documentation to a common doc tree structure. Documentation
+    goes in project/doc and build results go in project/doc/build.
+    
+    Change-Id: I3ae14ac735d9b4c0b534eac9a9c142f8ccaac1b9
+
+commit 93f9fa75fa8b96e4429dce73e0320686b5b52893
+Author: John Griffith <john.griffith@solidfire.com>
+Date:   Fri Jun 1 18:55:40 2012 -0600
+
+    Set pep8 version to 1.1 in test_requires
+    
+    * Fixes bug 1007520
+    * Changes in pep8 cause new failures
+    
+    Change-Id: Ie678f01a5008b0df6ef43a360b599890cab40776
+
+commit 314fa34b75307c51a1eaf7c9eab9033b2cdc2d48
+Author: Bhuvan Arumugam <bhuvan@apache.org>
+Date:   Fri Jun 1 23:52:38 2012 -0700
+
+    Auto generate AUTHORS file for python-cinderclient component.
+    
+    Bug: 976267
+    
+    Now that git commits are gated by CLA, we shouldn't enforce
+    committers to add an entry in AUTHORS file. The AUTHORS file
+    should be generated automatically, based on git commits.
+    
+    This commit fixes the problem.
+    
+    * AUTHORS
+      Remove this file.
+    
+    * .gitignore
+      Add AUTHORS file.
+    
+    * cinderclient/shell.py
+      pep8 fix.
+    
+    Change-Id: I4e3c4524fc71a11f11b48fcb6abb99e6c7f33e90
+
+commit 1711f1f9bb3cd514ded6839cff7e3d3aff1df547
+Author: Monty Taylor <mordred@inaugust.com>
+Date:   Mon May 21 16:44:06 2012 -0400
+
+    Align setup.py and tox with standards.
+    
+    Change-Id: Ic63c6fd4d770303ae5f295c58e43213e88e34b57
+
+commit 471704df644eced17026c280b0aab9e549718e14
+Author: Jenkins <jenkins@review.openstack.org>
+Date:   Mon May 21 16:32:35 2012 -0400
+
+    Initial split from python-novaclient.
