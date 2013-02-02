@@ -19,9 +19,9 @@ Build-Depends-Indep: openstack-pkg-tools,
  python-sphinx,
  python-unittest2
 Standards-Version: 3.9.3
-Homepage: http://launchpad.net/cinder
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
+Homepage: https://github.com/openstack/python-cinderclient
 
 Package: python-cinderclient
 Architecture: all
