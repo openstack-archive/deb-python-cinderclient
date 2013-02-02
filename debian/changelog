@@ -2,4 +2,4 @@ python-cinderclient (1:0.2-1) experimental; urgency=low
 
   * First debian release (Closes: #687518)
 
- -- Mehdi Abaakouk <sileht@sileht.net>  Thu, 13 Sep 2012 14:04:31 +0200
+ -- Thomas Goirand <zigo@debian.org>  Sat, 02 Feb 2013 13:43:12 +0000
