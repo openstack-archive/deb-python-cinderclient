@@ -14,6 +14,10 @@ override_dh_auto_configure:
 	echo $(VERSION) > cinderclient/versioninfo
 	dh_auto_configure
 
+override_dh_install:
+	dh_install
+	install -D -m 0644 tools/cinder.bash_completion $(CURDIR)/debian/python-cinderclient/etc/bash_completion.d/cinder.bash_completion
+
 %:
 	dh $@  --with python2
 
