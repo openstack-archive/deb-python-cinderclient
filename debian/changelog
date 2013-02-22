@@ -1,6 +1,7 @@
 python-cinderclient (1:1.0.2-1) experimental; urgency=low
 
   * New upstream release.
+  * Removes all old patches which aren't needed anymore.
 
  -- Thomas Goirand <zigo@debian.org>  Sat, 23 Feb 2013 02:36:05 +0800
 
