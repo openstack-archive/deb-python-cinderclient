@@ -17,6 +17,7 @@
 Volume snapshot interface (1.1 extension).
 """
 
+import urllib
 from cinderclient import base
 
 
@@ -32,6 +33,12 @@ class Snapshot(base.Resource):
         Delete this snapshot.
         """
         self.manager.delete(self)
+
+    def update(self, **kwargs):
+        """
+        Update the display_name or display_description for this snapshot.
+        """
+        self.manager.update(self, **kwargs)
 
     @property
     def progress(self):
@@ -108,3 +115,16 @@ class SnapshotManager(base.ManagerWithFind):
         :param snapshot: The :class:`Snapshot` to delete.
         """
         self._delete("/snapshots/%s" % base.getid(snapshot))
+
+    def update(self, snapshot, **kwargs):
+        """
+        Update the display_name or display_description for a snapshot.
+
+        :param snapshot: The :class:`Snapshot` to delete.
+        """
+        if not kwargs:
+            return
+
+        body = {"snapshot": kwargs}
+
+        self._update("/snapshots/%s" % base.getid(snapshot), body)

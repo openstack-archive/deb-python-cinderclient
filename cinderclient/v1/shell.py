@@ -15,10 +15,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import argparse
 import os
 import sys
 import time
 
+from cinderclient import exceptions
 from cinderclient import utils
 
 
@@ -64,11 +66,11 @@ def _find_volume_snapshot(cs, snapshot):
     return utils.find_resource(cs.volume_snapshots, snapshot)
 
 
-def _print_volume(cs, volume):
+def _print_volume(volume):
     utils.print_dict(volume._info)
 
 
-def _print_volume_snapshot(cs, snapshot):
+def _print_volume_snapshot(snapshot):
     utils.print_dict(snapshot._info)
 
 
@@ -90,19 +92,54 @@ def _translate_volume_snapshot_keys(collection):
                 setattr(item, to_key, item._info[from_key])
 
 
-@utils.arg('--all_tenants',
-           dest='all_tenants',
-           metavar='<0|1>',
-           nargs='?',
-           type=int,
-           const=1,
-           default=0,
-           help='Display information from all tenants (Admin only).')
+def _extract_metadata(args):
+    metadata = {}
+    for metadatum in args.metadata[0]:
+        # unset doesn't require a val, so we have the if/else
+        if '=' in metadatum:
+            (key, value) = metadatum.split('=', 1)
+        else:
+            key = metadatum
+            value = None
+
+        metadata[key] = value
+    return metadata
+
+
+@utils.arg(
+    '--all-tenants',
+    dest='all_tenants',
+    metavar='<0|1>',
+    nargs='?',
+    type=int,
+    const=1,
+    default=0,
+    help='Display information from all tenants (Admin only).')
+@utils.arg(
+    '--all_tenants',
+    nargs='?',
+    type=int,
+    const=1,
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--display-name',
+    metavar='<display-name>',
+    default=None,
+    help='Filter results by display-name')
+@utils.arg(
+    '--status',
+    metavar='<status>',
+    default=None,
+    help='Filter results by status')
 @utils.service_type('volume')
 def do_list(cs, args):
     """List all the volumes."""
     all_tenants = int(os.environ.get("ALL_TENANTS", args.all_tenants))
-    search_opts = {'all_tenants': all_tenants}
+    search_opts = {
+        'all_tenants': all_tenants,
+        'display_name': args.display_name,
+        'status': args.status,
+    }
     volumes = cs.volumes.list(search_opts=search_opts)
     _translate_volume_keys(volumes)
 
@@ -111,7 +148,7 @@ def do_list(cs, args):
         servers = [s.get('server_id') for s in vol.attachments]
         setattr(vol, 'attached_to', ','.join(map(str, servers)))
     utils.print_list(volumes, ['ID', 'Status', 'Display Name',
-                     'Size', 'Volume Type', 'Attached to'])
+                     'Size', 'Volume Type', 'Bootable', 'Attached to'])
 
 
 @utils.arg('volume', metavar='<volume>', help='ID of the volume.')
@@ -119,7 +156,7 @@ def do_list(cs, args):
 def do_show(cs, args):
     """Show details about a volume."""
     volume = _find_volume(cs, args.volume)
-    _print_volume(cs, volume)
+    _print_volume(volume)
 
 
 @utils.arg('size',
@@ -127,28 +164,85 @@ def do_show(cs, args):
            type=int,
            help='Size of volume in GB')
 @utils.arg(
+    '--snapshot-id',
+    metavar='<snapshot-id>',
+    default=None,
+    help='Create volume from snapshot id (Optional, Default=None)')
+@utils.arg(
     '--snapshot_id',
-    metavar='<snapshot_id>',
-    help='Optional snapshot id to create the volume from. (Default=None)',
-    default=None)
-@utils.arg('--display_name', metavar='<display_name>',
-           help='Optional volume name. (Default=None)',
-           default=None)
-@utils.arg('--display_description', metavar='<display_description>',
-           help='Optional volume description. (Default=None)',
-           default=None)
-@utils.arg('--volume_type',
-           metavar='<volume_type>',
-           help='Optional volume type. (Default=None)',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--source-volid',
+    metavar='<source-volid>',
+    default=None,
+    help='Create volume from volume id (Optional, Default=None)')
+@utils.arg(
+    '--source_volid',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--image-id',
+    metavar='<image-id>',
+    default=None,
+    help='Create volume from image id (Optional, Default=None)')
+@utils.arg(
+    '--image_id',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--display-name',
+    metavar='<display-name>',
+    default=None,
+    help='Volume name (Optional, Default=None)')
+@utils.arg(
+    '--display_name',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--display-description',
+    metavar='<display-description>',
+    default=None,
+    help='Volume description (Optional, Default=None)')
+@utils.arg(
+    '--display_description',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--volume-type',
+    metavar='<volume-type>',
+    default=None,
+    help='Volume type (Optional, Default=None)')
+@utils.arg(
+    '--volume_type',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--availability-zone',
+    metavar='<availability-zone>',
+    default=None,
+    help='Availability zone for volume (Optional, Default=None)')
+@utils.arg(
+    '--availability_zone',
+    help=argparse.SUPPRESS)
+@utils.arg('--metadata',
+           type=str,
+           nargs='*',
+           metavar='<key=value>',
+           help='Metadata key=value pairs (Optional, Default=None)',
            default=None)
 @utils.service_type('volume')
 def do_create(cs, args):
     """Add a new volume."""
-    cs.volumes.create(args.size,
-                      args.snapshot_id,
-                      args.display_name,
-                      args.display_description,
-                      args.volume_type)
+
+    volume_metadata = None
+    if args.metadata is not None:
+        volume_metadata = _extract_metadata(args)
+
+    volume = cs.volumes.create(args.size,
+                               args.snapshot_id,
+                               args.source_volid,
+                               args.display_name,
+                               args.display_description,
+                               args.volume_type,
+                               availability_zone=args.availability_zone,
+                               imageRef=args.image_id,
+                               metadata=volume_metadata)
+    _print_volume(volume)
 
 
 @utils.arg('volume', metavar='<volume>', help='ID of the volume to delete.')
@@ -159,19 +253,63 @@ def do_delete(cs, args):
     volume.delete()
 
 
-@utils.arg('--all_tenants',
-           dest='all_tenants',
-           metavar='<0|1>',
-           nargs='?',
-           type=int,
-           const=1,
-           default=0,
-           help='Display information from all tenants (Admin only).')
+@utils.arg('volume', metavar='<volume>', help='ID of the volume to rename.')
+@utils.arg('display_name', nargs='?', metavar='<display-name>',
+           help='New display-name for the volume.')
+@utils.arg('--display-description', metavar='<display-description>',
+           help='Optional volume description. (Default=None)',
+           default=None)
+@utils.service_type('volume')
+def do_rename(cs, args):
+    """Rename a volume."""
+    kwargs = {}
+    if args.display_name is not None:
+        kwargs['display_name'] = args.display_name
+    if args.display_description is not None:
+        kwargs['display_description'] = args.display_description
+    _find_volume(cs, args.volume).update(**kwargs)
+
+
+@utils.arg(
+    '--all-tenants',
+    dest='all_tenants',
+    metavar='<0|1>',
+    nargs='?',
+    type=int,
+    const=1,
+    default=0,
+    help='Display information from all tenants (Admin only).')
+@utils.arg(
+    '--all_tenants',
+    nargs='?',
+    type=int,
+    const=1,
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--display-name',
+    metavar='<display-name>',
+    default=None,
+    help='Filter results by display-name')
+@utils.arg(
+    '--status',
+    metavar='<status>',
+    default=None,
+    help='Filter results by status')
+@utils.arg(
+    '--volume-id',
+    metavar='<volume-id>',
+    default=None,
+    help='Filter results by volume-id')
 @utils.service_type('volume')
 def do_snapshot_list(cs, args):
     """List all the snapshots."""
     all_tenants = int(os.environ.get("ALL_TENANTS", args.all_tenants))
-    search_opts = {'all_tenants': all_tenants}
+    search_opts = {
+        'all_tenants': all_tenants,
+        'display_name': args.display_name,
+        'status': args.status,
+        'volume_id': args.volume_id,
+    }
 
     snapshots = cs.volume_snapshots.list(search_opts=search_opts)
     _translate_volume_snapshot_keys(snapshots)
@@ -184,11 +322,11 @@ def do_snapshot_list(cs, args):
 def do_snapshot_show(cs, args):
     """Show details about a snapshot."""
     snapshot = _find_volume_snapshot(cs, args.snapshot)
-    _print_volume_snapshot(cs, snapshot)
+    _print_volume_snapshot(snapshot)
 
 
 @utils.arg('volume_id',
-           metavar='<volume_id>',
+           metavar='<volume-id>',
            help='ID of the volume to snapshot')
 @utils.arg('--force',
            metavar='<True|False>',
@@ -196,23 +334,34 @@ def do_snapshot_show(cs, args):
            'to snapshot a volume even if its '
            'attached to an instance. (Default=False)',
            default=False)
-@utils.arg('--display_name', metavar='<display_name>',
-           help='Optional snapshot name. (Default=None)',
-           default=None)
-@utils.arg('--display_description', metavar='<display_description>',
-           help='Optional snapshot description. (Default=None)',
-           default=None)
+@utils.arg(
+    '--display-name',
+    metavar='<display-name>',
+    default=None,
+    help='Optional snapshot name. (Default=None)')
+@utils.arg(
+    '--display_name',
+    help=argparse.SUPPRESS)
+@utils.arg(
+    '--display-description',
+    metavar='<display-description>',
+    default=None,
+    help='Optional snapshot description. (Default=None)')
+@utils.arg(
+    '--display_description',
+    help=argparse.SUPPRESS)
 @utils.service_type('volume')
 def do_snapshot_create(cs, args):
     """Add a new snapshot."""
-    cs.volume_snapshots.create(args.volume_id,
-                               args.force,
-                               args.display_name,
-                               args.display_description)
+    snapshot = cs.volume_snapshots.create(args.volume_id,
+                                          args.force,
+                                          args.display_name,
+                                          args.display_description)
+    _print_volume_snapshot(snapshot)
 
 
 @utils.arg('snapshot_id',
-           metavar='<snapshot_id>',
+           metavar='<snapshot-id>',
            help='ID of the snapshot to delete.')
 @utils.service_type('volume')
 def do_snapshot_delete(cs, args):
@@ -221,8 +370,30 @@ def do_snapshot_delete(cs, args):
     snapshot.delete()
 
 
+@utils.arg('snapshot', metavar='<snapshot>', help='ID of the snapshot.')
+@utils.arg('display_name', nargs='?', metavar='<display-name>',
+           help='New display-name for the snapshot.')
+@utils.arg('--display-description', metavar='<display-description>',
+           help='Optional snapshot description. (Default=None)',
+           default=None)
+@utils.service_type('volume')
+def do_snapshot_rename(cs, args):
+    """Rename a snapshot."""
+    kwargs = {}
+    if args.display_name is not None:
+        kwargs['display_name'] = args.display_name
+    if args.display_description is not None:
+        kwargs['display_description'] = args.display_description
+    _find_volume_snapshot(cs, args.snapshot).update(**kwargs)
+
+
 def _print_volume_type_list(vtypes):
     utils.print_list(vtypes, ['ID', 'Name'])
+
+
+def _print_type_and_extra_specs_list(vtypes):
+    formatters = {'extra_specs': _print_type_extra_specs}
+    utils.print_list(vtypes, ['ID', 'Name', 'extra_specs'], formatters)
 
 
 @utils.service_type('volume')
@@ -232,9 +403,16 @@ def do_type_list(cs, args):
     _print_volume_type_list(vtypes)
 
 
+@utils.service_type('volume')
+def do_extra_specs_list(cs, args):
+    """Print a list of current 'volume types and extra specs' (Admin Only)."""
+    vtypes = cs.volume_types.list()
+    _print_type_and_extra_specs_list(vtypes)
+
+
 @utils.arg('name',
            metavar='<name>',
-           help="Name of the new flavor")
+           help="Name of the new volume type")
 @utils.service_type('volume')
 def do_type_create(cs, args):
     """Create a new volume type."""
@@ -247,8 +425,33 @@ def do_type_create(cs, args):
            help="Unique ID of the volume type to delete")
 @utils.service_type('volume')
 def do_type_delete(cs, args):
-    """Delete a specific flavor"""
+    """Delete a specific volume type"""
     cs.volume_types.delete(args.id)
+
+
+@utils.arg('vtype',
+           metavar='<vtype>',
+           help="Name or ID of the volume type")
+@utils.arg('action',
+           metavar='<action>',
+           choices=['set', 'unset'],
+           help="Actions: 'set' or 'unset'")
+@utils.arg('metadata',
+           metavar='<key=value>',
+           nargs='+',
+           action='append',
+           default=[],
+           help='Extra_specs to set/unset (only key is necessary on unset)')
+@utils.service_type('volume')
+def do_type_key(cs, args):
+    "Set or unset extra_spec for a volume type."""
+    vtype = _find_volume_type(cs, args.vtype)
+    keypair = _extract_metadata(args)
+
+    if args.action == 'set':
+        vtype.set_keys(keypair)
+    elif args.action == 'unset':
+        vtype.unset_keys(keypair.keys())
 
 
 def do_endpoints(cs, args):
@@ -263,3 +466,112 @@ def do_credentials(cs, args):
     catalog = cs.client.service_catalog.catalog
     utils.print_dict(catalog['access']['user'], "User Credentials")
     utils.print_dict(catalog['access']['token'], "Token")
+
+_quota_resources = ['volumes', 'gigabytes']
+
+
+def _quota_show(quotas):
+    quota_dict = {}
+    for resource in _quota_resources:
+        quota_dict[resource] = getattr(quotas, resource, None)
+    utils.print_dict(quota_dict)
+
+
+def _quota_update(manager, identifier, args):
+    updates = {}
+    for resource in _quota_resources:
+        val = getattr(args, resource, None)
+        if val is not None:
+            updates[resource] = val
+
+    if updates:
+        manager.update(identifier, **updates)
+
+
+@utils.arg('tenant', metavar='<tenant_id>',
+           help='UUID of tenant to list the quotas for.')
+@utils.service_type('volume')
+def do_quota_show(cs, args):
+    """List the quotas for a tenant."""
+
+    _quota_show(cs.quotas.get(args.tenant))
+
+
+@utils.arg('tenant', metavar='<tenant_id>',
+           help='UUID of tenant to list the default quotas for.')
+@utils.service_type('volume')
+def do_quota_defaults(cs, args):
+    """List the default quotas for a tenant."""
+
+    _quota_show(cs.quotas.defaults(args.tenant))
+
+
+@utils.arg('tenant', metavar='<tenant_id>',
+           help='UUID of tenant to set the quotas for.')
+@utils.arg('--volumes',
+           metavar='<volumes>',
+           type=int, default=None,
+           help='New value for the "volumes" quota.')
+@utils.arg('--gigabytes',
+           metavar='<gigabytes>',
+           type=int, default=None,
+           help='New value for the "gigabytes" quota.')
+@utils.service_type('volume')
+def do_quota_update(cs, args):
+    """Update the quotas for a tenant."""
+
+    _quota_update(cs.quotas, args.tenant, args)
+
+
+@utils.arg('class_name', metavar='<class>',
+           help='Name of quota class to list the quotas for.')
+@utils.service_type('volume')
+def do_quota_class_show(cs, args):
+    """List the quotas for a quota class."""
+
+    _quota_show(cs.quota_classes.get(args.class_name))
+
+
+@utils.arg('class_name', metavar='<class>',
+           help='Name of quota class to set the quotas for.')
+@utils.arg('--volumes',
+           metavar='<volumes>',
+           type=int, default=None,
+           help='New value for the "volumes" quota.')
+@utils.arg('--gigabytes',
+           metavar='<gigabytes>',
+           type=int, default=None,
+           help='New value for the "gigabytes" quota.')
+@utils.service_type('volume')
+def do_quota_class_update(cs, args):
+    """Update the quotas for a quota class."""
+
+    _quota_update(cs.quota_classes, args.class_name, args)
+
+
+@utils.service_type('volume')
+def do_absolute_limits(cs, args):
+    """Print a list of absolute limits for a user"""
+    limits = cs.limits.get().absolute
+    columns = ['Name', 'Value']
+    utils.print_list(limits, columns)
+
+
+@utils.service_type('volume')
+def do_rate_limits(cs, args):
+    """Print a list of rate limits for a user"""
+    limits = cs.limits.get().rate
+    columns = ['Verb', 'URI', 'Value', 'Remain', 'Unit', 'Next_Available']
+    utils.print_list(limits, columns)
+
+
+def _print_type_extra_specs(vol_type):
+    try:
+        return vol_type.get_keys()
+    except exceptions.NotFound:
+        return "N/A"
+
+
+def _find_volume_type(cs, vtype):
+    """Get a volume type by name or ID."""
+    return utils.find_resource(cs.volume_types, vtype)

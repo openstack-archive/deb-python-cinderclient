@@ -69,9 +69,74 @@ class ShellTest(utils.TestCase):
         # NOTE(jdg): we default to detail currently
         self.assert_called('GET', '/volumes/detail')
 
+    def test_list_filter_status(self):
+        self.run_command('list --status=available')
+        self.assert_called('GET', '/volumes/detail?status=available')
+
+    def test_list_filter_display_name(self):
+        self.run_command('list --display-name=1234')
+        self.assert_called('GET', '/volumes/detail?display_name=1234')
+
+    def test_list_all_tenants(self):
+        self.run_command('list --all-tenants=1')
+        self.assert_called('GET', '/volumes/detail?all_tenants=1')
+
     def test_show(self):
         self.run_command('show 1234')
         self.assert_called('GET', '/volumes/1234')
 
     def test_delete(self):
         self.run_command('delete 1234')
+        self.assert_called('DELETE', '/volumes/1234')
+
+    def test_snapshot_list_filter_volume_id(self):
+        self.run_command('snapshot-list --volume-id=1234')
+        self.assert_called('GET', '/snapshots/detail?volume_id=1234')
+
+    def test_snapshot_list_filter_status_and_volume_id(self):
+        self.run_command('snapshot-list --status=available --volume-id=1234')
+        self.assert_called('GET', '/snapshots/detail?'
+                           'status=available&volume_id=1234')
+
+    def test_rename(self):
+        # basic rename with positional agruments
+        self.run_command('rename 1234 new-name')
+        expected = {'volume': {'display_name': 'new-name'}}
+        self.assert_called('PUT', '/volumes/1234', body=expected)
+        # change description only
+        self.run_command('rename 1234 --display-description=new-description')
+        expected = {'volume': {'display_description': 'new-description'}}
+        self.assert_called('PUT', '/volumes/1234', body=expected)
+        # rename and change description
+        self.run_command('rename 1234 new-name '
+                         '--display-description=new-description')
+        expected = {'volume': {
+            'display_name': 'new-name',
+            'display_description': 'new-description',
+        }}
+        self.assert_called('PUT', '/volumes/1234', body=expected)
+        # noop, the only all will be the lookup
+        self.run_command('rename 1234')
+        self.assert_called('GET', '/volumes/1234')
+
+    def test_rename_snapshot(self):
+        # basic rename with positional agruments
+        self.run_command('snapshot-rename 1234 new-name')
+        expected = {'snapshot': {'display_name': 'new-name'}}
+        self.assert_called('PUT', '/snapshots/1234', body=expected)
+        # change description only
+        self.run_command('snapshot-rename 1234 '
+                         '--display-description=new-description')
+        expected = {'snapshot': {'display_description': 'new-description'}}
+        self.assert_called('PUT', '/snapshots/1234', body=expected)
+        # snapshot-rename and change description
+        self.run_command('snapshot-rename 1234 new-name '
+                         '--display-description=new-description')
+        expected = {'snapshot': {
+            'display_name': 'new-name',
+            'display_description': 'new-description',
+        }}
+        self.assert_called('PUT', '/snapshots/1234', body=expected)
+        # noop, the only all will be the lookup
+        self.run_command('snapshot-rename 1234')
+        self.assert_called('GET', '/snapshots/1234')

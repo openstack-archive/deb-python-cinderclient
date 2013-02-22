@@ -34,6 +34,12 @@ class Volume(base.Resource):
         """
         self.manager.delete(self)
 
+    def update(self, **kwargs):
+        """
+        Update the display_name or display_description for this volume.
+        """
+        self.manager.update(self, **kwargs)
+
     def attach(self, instance_uuid, mountpoint):
         """
         Set attachment metadata.
@@ -61,6 +67,18 @@ class Volume(base.Resource):
         """
         return self.manager.unreserve(self)
 
+    def begin_detaching(self, volume):
+        """
+        Begin detaching volume.
+        """
+        return self.manager.begin_detaching(self)
+
+    def roll_detaching(self, volume):
+        """
+        Roll detaching volume.
+        """
+        return self.manager.roll_detaching(self)
+
     def initialize_connection(self, volume, connector):
         """
         Initialize a volume connection.
@@ -84,11 +102,11 @@ class VolumeManager(base.ManagerWithFind):
     """
     resource_class = Volume
 
-    def create(self, size, snapshot_id=None,
+    def create(self, size, snapshot_id=None, source_volid=None,
                display_name=None, display_description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
-               metadata=None):
+               metadata=None, imageRef=None):
         """
         Create a volume.
 
@@ -102,12 +120,9 @@ class VolumeManager(base.ManagerWithFind):
         :param project_id: Project id derived from context
         :param availability_zone: Availability Zone to use
         :param metadata: Optional metadata to set on volume creation
+        :param imageRef: reference to an image stored in glance
+        :param source_volid: ID of source volume to clone from
         """
-
-        if volume_type is None:
-            volume_type_id = None
-        else:
-            volume_type_id = volume_type.get('id', None)
 
         if metadata is None:
             volume_metadata = {}
@@ -118,13 +133,15 @@ class VolumeManager(base.ManagerWithFind):
                            'snapshot_id': snapshot_id,
                            'display_name': display_name,
                            'display_description': display_description,
-                           'volume_type_id': volume_type_id,
+                           'volume_type': volume_type,
                            'user_id': user_id,
                            'project_id': project_id,
                            'availability_zone': availability_zone,
                            'status': "creating",
                            'attach_status': "detached",
                            'metadata': volume_metadata,
+                           'imageRef': imageRef,
+                           'source_volid': source_volid,
                            }}
         return self._create('/volumes', body, 'volume')
 
@@ -169,51 +186,18 @@ class VolumeManager(base.ManagerWithFind):
         """
         self._delete("/volumes/%s" % base.getid(volume))
 
-    def create_server_volume(self, server_id, volume_id, device):
+    def update(self, volume, **kwargs):
         """
-        Attach a volume identified by the volume ID to the given server ID
+        Update the display_name or display_description for a volume.
 
-        :param server_id: The ID of the server
-        :param volume_id: The ID of the volume to attach.
-        :param device: The device name
-        :rtype: :class:`Volume`
+        :param volume: The :class:`Volume` to delete.
         """
-        body = {'volumeAttachment': {'volumeId': volume_id,
-                                     'device': device}}
-        return self._create("/servers/%s/os-volume_attachments" % server_id,
-                            body, "volumeAttachment")
+        if not kwargs:
+            return
 
-    def get_server_volume(self, server_id, attachment_id):
-        """
-        Get the volume identified by the attachment ID, that is attached to
-        the given server ID
+        body = {"volume": kwargs}
 
-        :param server_id: The ID of the server
-        :param attachment_id: The ID of the attachment
-        :rtype: :class:`Volume`
-        """
-        return self._get("/servers/%s/os-volume_attachments/%s" % (server_id,
-                         attachment_id,), "volumeAttachment")
-
-    def get_server_volumes(self, server_id):
-        """
-        Get a list of all the attached volumes for the given server ID
-
-        :param server_id: The ID of the server
-        :rtype: list of :class:`Volume`
-        """
-        return self._list("/servers/%s/os-volume_attachments" % server_id,
-                          "volumeAttachments")
-
-    def delete_server_volume(self, server_id, attachment_id):
-        """
-        Detach a volume identified by the attachment ID from the given server
-
-        :param server_id: The ID of the server
-        :param attachment_id: The ID of the attachment
-        """
-        self._delete("/servers/%s/os-volume_attachments/%s" %
-                     (server_id, attachment_id,))
+        self._update("/volumes/%s" % base.getid(volume), body)
 
     def _action(self, action, volume, info=None, **kwargs):
         """
@@ -228,7 +212,7 @@ class VolumeManager(base.ManagerWithFind):
         """
         Set attachment metadata.
 
-        :param server: The :class:`Volume` (or its ID)
+        :param volume: The :class:`Volume` (or its ID)
                        you would like to attach.
         :param instance_uuid: uuid of the attaching instance.
         :param mountpoint: mountpoint on the attaching instance.
@@ -242,7 +226,7 @@ class VolumeManager(base.ManagerWithFind):
         """
         Clear attachment metadata.
 
-        :param server: The :class:`Volume` (or its ID)
+        :param volume: The :class:`Volume` (or its ID)
                        you would like to detach.
         """
         return self._action('os-detach', volume)
@@ -251,7 +235,7 @@ class VolumeManager(base.ManagerWithFind):
         """
         Reserve this volume.
 
-        :param server: The :class:`Volume` (or its ID)
+        :param volume: The :class:`Volume` (or its ID)
                        you would like to reserve.
         """
         return self._action('os-reserve', volume)
@@ -260,16 +244,34 @@ class VolumeManager(base.ManagerWithFind):
         """
         Unreserve this volume.
 
-        :param server: The :class:`Volume` (or its ID)
+        :param volume: The :class:`Volume` (or its ID)
                        you would like to unreserve.
         """
         return self._action('os-unreserve', volume)
+
+    def begin_detaching(self, volume):
+        """
+        Begin detaching this volume.
+
+        :param volume: The :class:`Volume` (or its ID)
+                       you would like to detach.
+        """
+        return self._action('os-begin_detaching', volume)
+
+    def roll_detaching(self, volume):
+        """
+        Roll detaching this volume.
+
+        :param volume: The :class:`Volume` (or its ID)
+                       you would like to roll detaching.
+        """
+        return self._action('os-roll_detaching', volume)
 
     def initialize_connection(self, volume, connector):
         """
         Initialize a volume connection.
 
-        :param server: The :class:`Volume` (or its ID).
+        :param volume: The :class:`Volume` (or its ID).
         :param connector: connector dict from nova.
         """
         return self._action('os-initialize_connection', volume,
@@ -279,7 +281,7 @@ class VolumeManager(base.ManagerWithFind):
         """
         Terminate a volume connection.
 
-        :param server: The :class:`Volume` (or its ID).
+        :param volume: The :class:`Volume` (or its ID).
         :param connector: connector dict from nova.
         """
         self._action('os-terminate_connection', volume,

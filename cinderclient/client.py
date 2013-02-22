@@ -7,10 +7,14 @@
 OpenStack Client interface. Handles the REST calls and responses.
 """
 
-import httplib2
 import logging
 import os
+import sys
 import urlparse
+try:
+    from eventlet import sleep
+except ImportError:
+    from time import sleep
 
 try:
     import json
@@ -22,31 +26,31 @@ if not hasattr(urlparse, 'parse_qsl'):
     import cgi
     urlparse.parse_qsl = cgi.parse_qsl
 
+import requests
+
 from cinderclient import exceptions
 from cinderclient import service_catalog
 from cinderclient import utils
 
 
-_logger = logging.getLogger(__name__)
-if 'CINDERCLIENT_DEBUG' in os.environ and os.environ['CINDERCLIENT_DEBUG']:
-    ch = logging.StreamHandler()
-    _logger.setLevel(logging.DEBUG)
-    _logger.addHandler(ch)
-
-
-class HTTPClient(httplib2.Http):
+class HTTPClient(object):
 
     USER_AGENT = 'python-cinderclient'
 
+    requests_config = {
+        'danger_mode': False,
+    }
+
     def __init__(self, user, password, projectid, auth_url, insecure=False,
-                 timeout=None, proxy_tenant_id=None,
+                 timeout=None, tenant_id=None, proxy_tenant_id=None,
                  proxy_token=None, region_name=None,
                  endpoint_type='publicURL', service_type=None,
-                 service_name=None, volume_service_name=None):
-        super(HTTPClient, self).__init__(timeout=timeout)
+                 service_name=None, volume_service_name=None, retries=None,
+                 http_log_debug=False, cacert=None):
         self.user = user
         self.password = password
         self.projectid = projectid
+        self.tenant_id = tenant_id
         self.auth_url = auth_url.rstrip('/')
         self.version = 'v1'
         self.region_name = region_name
@@ -54,23 +58,36 @@ class HTTPClient(httplib2.Http):
         self.service_type = service_type
         self.service_name = service_name
         self.volume_service_name = volume_service_name
+        self.retries = int(retries or 0)
+        self.http_log_debug = http_log_debug
 
         self.management_url = None
         self.auth_token = None
         self.proxy_token = proxy_token
         self.proxy_tenant_id = proxy_tenant_id
 
-        # httplib2 overrides
-        self.force_exception_to_status_code = True
-        self.disable_ssl_certificate_validation = insecure
+        if insecure:
+            self.verify_cert = False
+        else:
+            if cacert:
+                self.verify_cert = cacert
+            else:
+                self.verify_cert = True
 
-    def http_log(self, args, kwargs, resp, body):
-        if not _logger.isEnabledFor(logging.DEBUG):
+        self._logger = logging.getLogger(__name__)
+        if self.http_log_debug:
+            ch = logging.StreamHandler()
+            self._logger.setLevel(logging.DEBUG)
+            self._logger.addHandler(ch)
+            self.requests_config['verbose'] = sys.stderr
+
+    def http_log_req(self, args, kwargs):
+        if not self.http_log_debug:
             return
 
         string_parts = ['curl -i']
         for element in args:
-            if element in ('GET', 'POST'):
+            if element in ('GET', 'POST', 'DELETE', 'PUT'):
                 string_parts.append(' -X %s' % element)
             else:
                 string_parts.append(' %s' % element)
@@ -79,59 +96,94 @@ class HTTPClient(httplib2.Http):
             header = ' -H "%s: %s"' % (element, kwargs['headers'][element])
             string_parts.append(header)
 
-        _logger.debug("REQ: %s\n" % "".join(string_parts))
         if 'body' in kwargs:
-            _logger.debug("REQ BODY: %s\n" % (kwargs['body']))
-        _logger.debug("RESP:%s %s\n", resp, body)
+            string_parts.append(" -d '%s'" % (kwargs['body']))
+        self._logger.debug("\nREQ: %s\n" % "".join(string_parts))
 
-    def request(self, *args, **kwargs):
+    def http_log_resp(self, resp):
+        if not self.http_log_debug:
+            return
+        self._logger.debug(
+            "RESP: [%s] %s\nRESP BODY: %s\n",
+            resp.status_code,
+            resp.headers,
+            resp.text)
+
+    def request(self, url, method, **kwargs):
         kwargs.setdefault('headers', kwargs.get('headers', {}))
         kwargs['headers']['User-Agent'] = self.USER_AGENT
         kwargs['headers']['Accept'] = 'application/json'
         if 'body' in kwargs:
             kwargs['headers']['Content-Type'] = 'application/json'
-            kwargs['body'] = json.dumps(kwargs['body'])
+            kwargs['data'] = json.dumps(kwargs['body'])
+            del kwargs['body']
 
-        resp, body = super(HTTPClient, self).request(*args, **kwargs)
+        self.http_log_req((url, method,), kwargs)
+        resp = requests.request(
+            method,
+            url,
+            verify=self.verify_cert,
+            config=self.requests_config,
+            **kwargs)
+        self.http_log_resp(resp)
 
-        self.http_log(args, kwargs, resp, body)
-
-        if body:
+        if resp.text:
             try:
-                body = json.loads(body)
+                body = json.loads(resp.text)
             except ValueError:
                 pass
+                body = None
         else:
             body = None
 
-        if resp.status >= 400:
+        if resp.status_code >= 400:
             raise exceptions.from_response(resp, body)
 
         return resp, body
 
     def _cs_request(self, url, method, **kwargs):
-        if not self.management_url:
-            self.authenticate()
-
-        # Perform the request once. If we get a 401 back then it
-        # might be because the auth token expired, so try to
-        # re-authenticate and try again. If it still fails, bail.
-        try:
+        auth_attempts = 0
+        attempts = 0
+        backoff = 1
+        while True:
+            attempts += 1
+            if not self.management_url or not self.auth_token:
+                self.authenticate()
             kwargs.setdefault('headers', {})['X-Auth-Token'] = self.auth_token
             if self.projectid:
                 kwargs['headers']['X-Auth-Project-Id'] = self.projectid
-
-            resp, body = self.request(self.management_url + url, method,
-                                      **kwargs)
-            return resp, body
-        except exceptions.Unauthorized, ex:
             try:
-                self.authenticate()
                 resp, body = self.request(self.management_url + url, method,
                                           **kwargs)
                 return resp, body
+            except exceptions.BadRequest as e:
+                if attempts > self.retries:
+                    raise
             except exceptions.Unauthorized:
-                raise ex
+                if auth_attempts > 0:
+                    raise
+                self._logger.debug("Unauthorized, reauthenticating.")
+                self.management_url = self.auth_token = None
+                # First reauth. Discount this attempt.
+                attempts -= 1
+                auth_attempts += 1
+                continue
+            except exceptions.ClientException as e:
+                if attempts > self.retries:
+                    raise
+                if 500 <= e.code <= 599:
+                    pass
+                else:
+                    raise
+            except requests.exceptions.ConnectionError as e:
+                # Catch a connection refused from requests.request
+                self._logger.debug("Connection refused: %s" % e)
+                raise
+            self._logger.debug(
+                "Failed attempt(%s of %s), retrying in %s seconds" %
+                (attempts, self.retries, backoff))
+            sleep(backoff)
+            backoff *= 2
 
     def get(self, url, **kwargs):
         return self._cs_request(url, 'GET', **kwargs)
@@ -150,7 +202,7 @@ class HTTPClient(httplib2.Http):
         We may get redirected to another site, fail or actually get
         back a service catalog with a token and our endpoints."""
 
-        if resp.status == 200:  # content must always present
+        if resp.status_code == 200:  # content must always present
             try:
                 self.auth_url = url
                 self.service_catalog = \
@@ -178,7 +230,7 @@ class HTTPClient(httplib2.Http):
                 print "Could not find any suitable endpoint. Correct region?"
                 raise
 
-        elif resp.status == 305:
+        elif resp.status_code == 305:
             return resp['location']
         else:
             raise exceptions.from_response(resp, body)
@@ -198,7 +250,7 @@ class HTTPClient(httplib2.Http):
         # GET ...:5001/v2.0/tokens/#####/endpoints
         url = '/'.join([url, 'tokens', '%s?belongsTo=%s'
                         % (self.proxy_token, self.proxy_tenant_id)])
-        _logger.debug("Using Endpoint URL: %s" % url)
+        self._logger.debug("Using Endpoint URL: %s" % url)
         resp, body = self.request(url, "GET",
                                   headers={'X-Auth_Token': self.auth_token})
         return self._extract_service_catalog(url, resp, body,
@@ -261,16 +313,16 @@ class HTTPClient(httplib2.Http):
             headers['X-Auth-Project-Id'] = self.projectid
 
         resp, body = self.request(url, 'GET', headers=headers)
-        if resp.status in (200, 204):  # in some cases we get No Content
+        if resp.status_code in (200, 204):  # in some cases we get No Content
             try:
                 mgmt_header = 'x-server-management-url'
-                self.management_url = resp[mgmt_header].rstrip('/')
-                self.auth_token = resp['x-auth-token']
+                self.management_url = resp.headers[mgmt_header].rstrip('/')
+                self.auth_token = resp.headers['x-auth-token']
                 self.auth_url = url
-            except KeyError:
+            except (KeyError, TypeError):
                 raise exceptions.AuthorizationFailure()
-        elif resp.status == 305:
-            return resp['location']
+        elif resp.status_code == 305:
+            return resp.headers['location']
         else:
             raise exceptions.from_response(resp, body)
 
@@ -282,6 +334,8 @@ class HTTPClient(httplib2.Http):
 
         if self.projectid:
             body['auth']['tenantName'] = self.projectid
+        elif self.tenant_id:
+            body['auth']['tenantId'] = self.tenant_id
 
         self._authenticate(url, body)
 
@@ -300,13 +354,11 @@ class HTTPClient(httplib2.Http):
         token_url = url + "/tokens"
 
         # Make sure we follow redirects when trying to reach Keystone
-        tmp_follow_all_redirects = self.follow_all_redirects
-        self.follow_all_redirects = True
-
-        try:
-            resp, body = self.request(token_url, "POST", body=body)
-        finally:
-            self.follow_all_redirects = tmp_follow_all_redirects
+        resp, body = self.request(
+            token_url,
+            "POST",
+            body=body,
+            allow_redirects=True)
 
         return self._extract_service_catalog(url, resp, body)
 
