@@ -22,4 +22,4 @@ override_dh_install:
 	dh $@  --with python2
 
 override_dh_auto_test:
-	./run_tests.sh -N
+	./run_tests.sh -N -P
