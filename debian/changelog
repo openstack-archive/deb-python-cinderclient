@@ -1,3 +1,9 @@
+python-cinderclient (1:1.0.2-1) experimental; urgency=low
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Sat, 23 Feb 2013 02:36:05 +0800
+
 python-cinderclient (1:0.2-1) experimental; urgency=low
 
   * First debian release (Closes: #687518)
