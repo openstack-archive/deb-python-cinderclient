@@ -11,11 +11,13 @@ Build-Depends: debhelper (>= 9),
 Build-Depends-Indep: openstack-pkg-tools,
  python-setuptools,
  python-nose,
+ python-nosexcover,
  python-httplib2,
  python-prettytable,
  python-simplejson,
  python-mock,
  pep8,
+ python-requests,
  python-sphinx,
  python-unittest2
 Standards-Version: 3.9.3
@@ -29,6 +31,7 @@ Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${python:Depends}, ${misc:Depends}, 
  python-httplib2,
  python-prettytable,
+ python-requests,
  python-simplejson
 Provides: ${python:Provides}
 Description: python bindings to the OpenStack Volume API
