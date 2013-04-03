@@ -7,18 +7,21 @@ Uploaders: Julien Danjou <acid@debian.org>,
            Ghe Rivero <ghe.rivero@stackops.com>,
            Mehdi Abaakouk <sileht@sileht.net>
 Build-Depends: debhelper (>= 9),
- python-all (>= 2.6.6-3~)
-Build-Depends-Indep: openstack-pkg-tools,
- python-setuptools,
+ python-all (>= 2.6.6-3~), openstack-pkg-tools
+Build-Depends-Indep: python-coverage,
+ python-discover,
+ python-fixtures,
+ python-httplib2,
+ python-mock,
  python-nose,
  python-nosexcover,
- python-httplib2,
  python-prettytable,
- python-simplejson,
- python-mock,
- pep8,
  python-requests,
+ python-setuptools,
+ python-simplejson,
  python-sphinx,
+ python-testrepository,
+ python-testtools,
  python-unittest2
 Standards-Version: 3.9.3
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
@@ -29,6 +32,7 @@ Package: python-cinderclient
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${python:Depends}, ${misc:Depends}, 
+ python-argparse,
  python-httplib2,
  python-prettytable,
  python-requests,
