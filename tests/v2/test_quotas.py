@@ -1,4 +1,4 @@
-# Copyright 2011 OpenStack LLC.
+# Copyright 2013 OpenStack LLC.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,7 +14,7 @@
 #    under the License.
 
 from tests import utils
-from tests.v1 import fakes
+from tests.v2 import fakes
 
 
 cs = fakes.FakeClient()

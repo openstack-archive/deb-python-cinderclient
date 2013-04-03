@@ -1,4 +1,4 @@
-# Copyright 2011 Denali Systems, Inc.
+# Copyright 2013 OpenStack LLC.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,36 +13,28 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-Volume interface (1.1 extension).
-"""
+"""Volume interface (v2 extension)."""
 
 import urllib
+
 from cinderclient import base
 
 
 class Volume(base.Resource):
-    """
-    A volume is an extra block level storage to the OpenStack instances.
-    """
+    """A volume is an extra block level storage to the OpenStack instances."""
     def __repr__(self):
         return "<Volume: %s>" % self.id
 
     def delete(self):
-        """
-        Delete this volume.
-        """
+        """Delete this volume."""
         self.manager.delete(self)
 
     def update(self, **kwargs):
-        """
-        Update the display_name or display_description for this volume.
-        """
+        """Update the name or description for this volume."""
         self.manager.update(self, **kwargs)
 
     def attach(self, instance_uuid, mountpoint):
-        """
-        Set attachment metadata.
+        """Set attachment metadata.
 
         :param instance_uuid: uuid of the attaching instance.
         :param mountpoint: mountpoint on the attaching instance.
@@ -50,54 +42,41 @@ class Volume(base.Resource):
         return self.manager.attach(self, instance_uuid, mountpoint)
 
     def detach(self):
-        """
-        Clear attachment metadata.
-        """
+        """Clear attachment metadata."""
         return self.manager.detach(self)
 
     def reserve(self, volume):
-        """
-        Reserve this volume.
-        """
+        """Reserve this volume."""
         return self.manager.reserve(self)
 
     def unreserve(self, volume):
-        """
-        Unreserve this volume.
-        """
+        """Unreserve this volume."""
         return self.manager.unreserve(self)
 
     def begin_detaching(self, volume):
-        """
-        Begin detaching volume.
-        """
+        """Begin detaching volume."""
         return self.manager.begin_detaching(self)
 
     def roll_detaching(self, volume):
-        """
-        Roll detaching volume.
-        """
+        """Roll detaching volume."""
         return self.manager.roll_detaching(self)
 
     def initialize_connection(self, volume, connector):
-        """
-        Initialize a volume connection.
+        """Initialize a volume connection.
 
         :param connector: connector dict from nova.
         """
         return self.manager.initialize_connection(self, connector)
 
     def terminate_connection(self, volume, connector):
-        """
-        Terminate a volume connection.
+        """Terminate a volume connection.
 
         :param connector: connector dict from nova.
         """
         return self.manager.terminate_connection(self, connector)
 
     def set_metadata(self, volume, metadata):
-        """
-        Set or Append metadata to a volume.
+        """Set or Append metadata to a volume.
 
         :param type : The :class: `Volume` to set metadata on
         :param metadata: A dict of key/value pairs to set
@@ -106,15 +85,12 @@ class Volume(base.Resource):
 
     def upload_to_image(self, force, image_name, container_format,
                         disk_format):
-        """
-        Upload a volume to image service as an image.
-        """
+        """Upload a volume to image service as an image."""
         self.manager.upload_to_image(self, force, image_name, container_format,
                                      disk_format)
 
     def force_delete(self):
-        """
-        Delete the specififed volume ignoring it's current state.
+        """Delete the specififed volume ignoring it's current state.
 
         :param volume: The UUID of the volume to force-delete.
         """
@@ -122,23 +98,20 @@ class Volume(base.Resource):
 
 
 class VolumeManager(base.ManagerWithFind):
-    """
-    Manage :class:`Volume` resources.
-    """
+    """Manage :class:`Volume` resources."""
     resource_class = Volume
 
     def create(self, size, snapshot_id=None, source_volid=None,
-               display_name=None, display_description=None,
+               name=None, description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
                metadata=None, imageRef=None):
-        """
-        Create a volume.
+        """Create a volume.
 
         :param size: Size of volume in GB
         :param snapshot_id: ID of the snapshot
-        :param display_name: Name of the volume
-        :param display_description: Description of the volume
+        :param name: Name of the volume
+        :param description: Description of the volume
         :param volume_type: Type of volume
         :rtype: :class:`Volume`
         :param user_id: User id derived from context
@@ -156,8 +129,8 @@ class VolumeManager(base.ManagerWithFind):
 
         body = {'volume': {'size': size,
                            'snapshot_id': snapshot_id,
-                           'display_name': display_name,
-                           'display_description': display_description,
+                           'name': name,
+                           'description': description,
                            'volume_type': volume_type,
                            'user_id': user_id,
                            'project_id': project_id,
@@ -171,8 +144,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._create('/volumes', body, 'volume')
 
     def get(self, volume_id):
-        """
-        Get a volume.
+        """Get a volume.
 
         :param volume_id: The ID of the volume to delete.
         :rtype: :class:`Volume`
@@ -180,8 +152,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._get("/volumes/%s" % volume_id, "volume")
 
     def list(self, detailed=True, search_opts=None):
-        """
-        Get a list of all volumes.
+        """Get a list of all volumes.
 
         :rtype: list of :class:`Volume`
         """
@@ -204,16 +175,14 @@ class VolumeManager(base.ManagerWithFind):
                           "volumes")
 
     def delete(self, volume):
-        """
-        Delete a volume.
+        """Delete a volume.
 
         :param volume: The :class:`Volume` to delete.
         """
         self._delete("/volumes/%s" % base.getid(volume))
 
     def update(self, volume, **kwargs):
-        """
-        Update the display_name or display_description for a volume.
+        """Update the name or description for a volume.
 
         :param volume: The :class:`Volume` to delete.
         """
@@ -225,8 +194,7 @@ class VolumeManager(base.ManagerWithFind):
         self._update("/volumes/%s" % base.getid(volume), body)
 
     def _action(self, action, volume, info=None, **kwargs):
-        """
-        Perform a volume "action."
+        """Perform a volume "action."
         """
         body = {action: info}
         self.run_hooks('modify_body_for_action', body, **kwargs)
@@ -234,8 +202,7 @@ class VolumeManager(base.ManagerWithFind):
         return self.api.client.post(url, body=body)
 
     def attach(self, volume, instance_uuid, mountpoint):
-        """
-        Set attachment metadata.
+        """Set attachment metadata.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to attach.
@@ -248,8 +215,7 @@ class VolumeManager(base.ManagerWithFind):
                              'mountpoint': mountpoint})
 
     def detach(self, volume):
-        """
-        Clear attachment metadata.
+        """Clear attachment metadata.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to detach.
@@ -257,8 +223,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-detach', volume)
 
     def reserve(self, volume):
-        """
-        Reserve this volume.
+        """Reserve this volume.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to reserve.
@@ -266,8 +231,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-reserve', volume)
 
     def unreserve(self, volume):
-        """
-        Unreserve this volume.
+        """Unreserve this volume.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to unreserve.
@@ -275,8 +239,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-unreserve', volume)
 
     def begin_detaching(self, volume):
-        """
-        Begin detaching this volume.
+        """Begin detaching this volume.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to detach.
@@ -284,8 +247,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-begin_detaching', volume)
 
     def roll_detaching(self, volume):
-        """
-        Roll detaching this volume.
+        """Roll detaching this volume.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to roll detaching.
@@ -293,8 +255,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-roll_detaching', volume)
 
     def initialize_connection(self, volume, connector):
-        """
-        Initialize a volume connection.
+        """Initialize a volume connection.
 
         :param volume: The :class:`Volume` (or its ID).
         :param connector: connector dict from nova.
@@ -303,8 +264,7 @@ class VolumeManager(base.ManagerWithFind):
                             {'connector': connector})[1]['connection_info']
 
     def terminate_connection(self, volume, connector):
-        """
-        Terminate a volume connection.
+        """Terminate a volume connection.
 
         :param volume: The :class:`Volume` (or its ID).
         :param connector: connector dict from nova.
@@ -313,8 +273,7 @@ class VolumeManager(base.ManagerWithFind):
                      {'connector': connector})
 
     def set_metadata(self, volume, metadata):
-        """
-        Update/Set a volumes metadata.
+        """Update/Set a volumes metadata.
 
         :param volume: The :class:`Volume`.
         :param metadata: A list of keys to be set.
@@ -324,8 +283,7 @@ class VolumeManager(base.ManagerWithFind):
                             body, "metadata")
 
     def delete_metadata(self, volume, keys):
-        """
-        Delete specified keys from volumes metadata.
+        """Delete specified keys from volumes metadata.
 
         :param volume: The :class:`Volume`.
         :param metadata: A list of keys to be removed.
@@ -335,8 +293,7 @@ class VolumeManager(base.ManagerWithFind):
 
     def upload_to_image(self, volume, force, image_name, container_format,
                         disk_format):
-        """
-        Upload volume to image service as image.
+        """Upload volume to image service as image.
 
         :param volume: The :class:`Volume` to upload.
         """

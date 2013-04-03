@@ -1,4 +1,4 @@
-# Copyright 2011 OpenStack LLC.
+# Copyright 2013 OpenStack LLC.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,39 +14,29 @@
 #    under the License.
 
 from tests import utils
-from tests.v1 import fakes
+from tests.v2 import fakes
 
 
 cs = fakes.FakeClient()
 
 
-class QuotaSetsTest(utils.TestCase):
+class QuotaClassSetsTest(utils.TestCase):
 
-    def test_tenant_quotas_get(self):
-        tenant_id = 'test'
-        cs.quotas.get(tenant_id)
-        cs.assert_called('GET', '/os-quota-sets/%s' % tenant_id)
-
-    def test_tenant_quotas_defaults(self):
-        tenant_id = 'test'
-        cs.quotas.defaults(tenant_id)
-        cs.assert_called('GET', '/os-quota-sets/%s/defaults' % tenant_id)
+    def test_class_quotas_get(self):
+        class_name = 'test'
+        cs.quota_classes.get(class_name)
+        cs.assert_called('GET', '/os-quota-class-sets/%s' % class_name)
 
     def test_update_quota(self):
-        q = cs.quotas.get('test')
+        q = cs.quota_classes.get('test')
         q.update(volumes=2)
-        q.update(snapshots=2)
-        cs.assert_called('PUT', '/os-quota-sets/test')
+        cs.assert_called('PUT', '/os-quota-class-sets/test')
 
     def test_refresh_quota(self):
-        q = cs.quotas.get('test')
-        q2 = cs.quotas.get('test')
+        q = cs.quota_classes.get('test')
+        q2 = cs.quota_classes.get('test')
         self.assertEqual(q.volumes, q2.volumes)
-        self.assertEqual(q.snapshots, q2.snapshots)
         q2.volumes = 0
         self.assertNotEqual(q.volumes, q2.volumes)
-        q2.snapshots = 0
-        self.assertNotEqual(q.snapshots, q2.snapshots)
         q2.get()
         self.assertEqual(q.volumes, q2.volumes)
-        self.assertEqual(q.snapshots, q2.snapshots)

@@ -15,7 +15,7 @@
 #    under the License.
 
 """
-Command-line interface to the OpenStack Volume API.
+Command-line interface to the OpenStack Cinder API.
 """
 
 import argparse
@@ -30,8 +30,10 @@ import logging
 from cinderclient import client
 from cinderclient import exceptions as exc
 import cinderclient.extension
+from cinderclient.openstack.common import strutils
 from cinderclient import utils
 from cinderclient.v1 import shell as shell_v1
+from cinderclient.v2 import shell as shell_v2
 
 DEFAULT_OS_VOLUME_API_VERSION = "1"
 DEFAULT_CINDER_ENDPOINT_TYPE = 'publicURL'
@@ -78,6 +80,10 @@ class OpenStackCinderShell(object):
         parser.add_argument('-h', '--help',
                             action='store_true',
                             help=argparse.SUPPRESS)
+
+        parser.add_argument('--version',
+                            action='version',
+                            version=cinderclient.__version__)
 
         parser.add_argument('--debug',
                             action='store_true',
@@ -158,7 +164,7 @@ class OpenStackCinderShell(object):
                             metavar='<compute-api-ver>',
                             default=utils.env('OS_VOLUME_API_VERSION',
                             default=DEFAULT_OS_VOLUME_API_VERSION),
-                            help='Accepts 1,defaults '
+                            help='Accepts 1 or 2,defaults '
                                  'to env[OS_VOLUME_API_VERSION].')
         parser.add_argument('--os_volume_api_version',
                             help=argparse.SUPPRESS)
@@ -219,7 +225,7 @@ class OpenStackCinderShell(object):
         try:
             actions_module = {
                 '1.1': shell_v1,
-                '2': shell_v1,
+                '2': shell_v2,
             }[version]
         except KeyError:
             actions_module = shell_v1
@@ -428,7 +434,7 @@ class OpenStackCinderShell(object):
             if not utils.isunauthenticated(args.func):
                 self.cs.authenticate()
         except exc.Unauthorized:
-            raise exc.CommandError("Invalid OpenStack Nova credentials.")
+            raise exc.CommandError("Invalid OpenStack Cinder credentials.")
         except exc.AuthorizationFailure:
             raise exc.CommandError("Unable to authorize user")
 
@@ -481,11 +487,16 @@ class OpenStackHelpFormatter(argparse.HelpFormatter):
 
 def main():
     try:
-        OpenStackCinderShell().main(sys.argv[1:])
-
+        OpenStackCinderShell().main(map(strutils.safe_decode, sys.argv[1:]))
+    except KeyboardInterrupt:
+        print >> sys.stderr, "... terminating cinder client"
+        sys.exit(130)
     except Exception, e:
         logger.debug(e, exc_info=1)
-        print >> sys.stderr, "ERROR: %s" % str(e)
+        message = e.message
+        if not isinstance(message, basestring):
+            message = str(message)
+        print >> sys.stderr, "ERROR: %s" % strutils.safe_encode(message)
         sys.exit(1)
 
 
