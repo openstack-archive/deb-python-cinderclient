@@ -1,4 +1,4 @@
-python-cinderclient (1:1.0.2-1) experimental; urgency=low
+python-cinderclient (1:1.0.3-1) experimental; urgency=low
 
   * New upstream release.
   * Removes all old patches which aren't needed anymore.
