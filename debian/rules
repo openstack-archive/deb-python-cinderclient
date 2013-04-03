@@ -5,6 +5,8 @@
 
 include /usr/share/openstack-pkg-tools/pkgos.make
 
+export OSLO_PACKAGE_VERSION=$(VERSION)
+
 override_dh_auto_clean:
 	echo $(VERSION) > cinderclient/versioninfo
 	dh_auto_clean
