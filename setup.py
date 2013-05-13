@@ -14,7 +14,6 @@
 
 import os
 import setuptools
-import sys
 
 
 from cinderclient.openstack.common import setup
@@ -22,6 +21,7 @@ from cinderclient.openstack.common import setup
 requires = setup.parse_requirements()
 depend_links = setup.parse_dependency_links()
 tests_require = setup.parse_requirements(['tools/test-requires'])
+project = 'python-cinderclient'
 
 
 def read_file(file_name):
@@ -29,10 +29,10 @@ def read_file(file_name):
 
 
 setuptools.setup(
-    name="python-cinderclient",
-    version=setup.get_post_version('cinderclient'),
-    author="Rackspace, based on work by Jacob Kaplan-Moss",
-    author_email="github@racklabs.com",
+    name=project,
+    version=setup.get_version(project),
+    author="OpenStack Contributors",
+    author_email="openstack-dev@lists.openstack.org",
     description="Client library for OpenStack Cinder API.",
     long_description=read_file("README.rst"),
     license="Apache License, Version 2.0",
@@ -42,8 +42,8 @@ setuptools.setup(
     install_requires=requires,
     tests_require=tests_require,
     setup_requires=['setuptools-git>=0.4'],
+    include_package_data=True,
     dependency_links=depend_links,
-    test_suite="nose.collector",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",

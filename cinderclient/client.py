@@ -9,7 +9,6 @@ OpenStack Client interface. Handles the REST calls and responses.
 
 import logging
 import os
-import sys
 import urlparse
 try:
     from eventlet import sleep
@@ -36,10 +35,6 @@ from cinderclient import utils
 class HTTPClient(object):
 
     USER_AGENT = 'python-cinderclient'
-
-    requests_config = {
-        'danger_mode': False,
-    }
 
     def __init__(self, user, password, projectid, auth_url, insecure=False,
                  timeout=None, tenant_id=None, proxy_tenant_id=None,
@@ -79,7 +74,8 @@ class HTTPClient(object):
             ch = logging.StreamHandler()
             self._logger.setLevel(logging.DEBUG)
             self._logger.addHandler(ch)
-            self.requests_config['verbose'] = sys.stderr
+            if hasattr(requests, 'logging'):
+                requests.logging.getLogger(requests.__name__).addHandler(ch)
 
     def http_log_req(self, args, kwargs):
         if not self.http_log_debug:
@@ -96,8 +92,8 @@ class HTTPClient(object):
             header = ' -H "%s: %s"' % (element, kwargs['headers'][element])
             string_parts.append(header)
 
-        if 'body' in kwargs:
-            string_parts.append(" -d '%s'" % (kwargs['body']))
+        if 'data' in kwargs:
+            string_parts.append(" -d '%s'" % (kwargs['data']))
         self._logger.debug("\nREQ: %s\n" % "".join(string_parts))
 
     def http_log_resp(self, resp):
@@ -123,7 +119,6 @@ class HTTPClient(object):
             method,
             url,
             verify=self.verify_cert,
-            config=self.requests_config,
             **kwargs)
         self.http_log_resp(resp)
 
@@ -252,7 +247,7 @@ class HTTPClient(object):
                         % (self.proxy_token, self.proxy_tenant_id)])
         self._logger.debug("Using Endpoint URL: %s" % url)
         resp, body = self.request(url, "GET",
-                                  headers={'X-Auth_Token': self.auth_token})
+                                  headers={'X-Auth-Token': self.auth_token})
         return self._extract_service_catalog(url, resp, body,
                                              extract_token=False)
 
@@ -366,6 +361,7 @@ class HTTPClient(object):
 def get_client_class(version):
     version_map = {
         '1': 'cinderclient.v1.client.Client',
+        '2': 'cinderclient.v2.client.Client',
     }
     try:
         client_path = version_map[str(version)]

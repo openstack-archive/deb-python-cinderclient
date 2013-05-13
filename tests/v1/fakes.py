@@ -57,6 +57,60 @@ def _stub_snapshot(**kwargs):
     return snapshot
 
 
+def _self_href(base_uri, tenant_id, backup_id):
+    return '%s/v1/%s/backups/%s' % (base_uri, tenant_id, backup_id)
+
+
+def _bookmark_href(base_uri, tenant_id, backup_id):
+    return '%s/%s/backups/%s' % (base_uri, tenant_id, backup_id)
+
+
+def _stub_backup_full(id, base_uri, tenant_id):
+    return {
+        'id': id,
+        'name': 'backup',
+        'description': 'nightly backup',
+        'volume_id': '712f4980-5ac1-41e5-9383-390aa7c9f58b',
+        'container': 'volumebackups',
+        'object_count': 220,
+        'size': 10,
+        'availability_zone': 'az1',
+        'created_at': '2013-04-12T08:16:37.000000',
+        'status': 'available',
+        'links': [
+            {
+                'href': _self_href(base_uri, tenant_id, id),
+                'rel': 'self'
+            },
+            {
+                'href': _bookmark_href(base_uri, tenant_id, id),
+                'rel': 'bookmark'
+            }
+        ]
+    }
+
+
+def _stub_backup(id, base_uri, tenant_id):
+    return {
+        'id': id,
+        'name': 'backup',
+        'links': [
+            {
+                'href': _self_href(base_uri, tenant_id, id),
+                'rel': 'self'
+            },
+            {
+                'href': _bookmark_href(base_uri, tenant_id, id),
+                'rel': 'bookmark'
+            }
+        ]
+    }
+
+
+def _stub_restore():
+    return {'volume_id': '712f4980-5ac1-41e5-9383-390aa7c9f58b'}
+
+
 class FakeClient(fakes.FakeClient, client.Client):
 
     def __init__(self, *args, **kwargs):
@@ -196,6 +250,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'tenant_id': 'test',
                           'metadata_items': [],
                           'volumes': 1,
+                          'snapshots': 1,
                           'gigabytes': 1}})
 
     def get_os_quota_sets_test_defaults(self):
@@ -203,6 +258,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'tenant_id': 'test',
                           'metadata_items': [],
                           'volumes': 1,
+                          'snapshots': 1,
                           'gigabytes': 1}})
 
     def put_os_quota_sets_test(self, body, **kw):
@@ -213,6 +269,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'tenant_id': 'test',
                           'metadata_items': [],
                           'volumes': 2,
+                          'snapshots': 2,
                           'gigabytes': 1}})
 
     #
@@ -224,6 +281,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'class_name': 'test',
                           'metadata_items': [],
                           'volumes': 1,
+                          'snapshots': 1,
                           'gigabytes': 1}})
 
     def put_os_quota_class_sets_test(self, body, **kw):
@@ -234,6 +292,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'class_name': 'test',
                           'metadata_items': [],
                           'volumes': 2,
+                          'snapshots': 2,
                           'gigabytes': 1}})
 
     #
@@ -269,6 +328,21 @@ class FakeHTTPClient(base_client.HTTPClient):
         return (202, {}, None)
 
     #
+    # Set/Unset metadata
+    #
+    def delete_volumes_1234_metadata_test_key(self, **kw):
+        return (204, {}, None)
+
+    def delete_volumes_1234_metadata_key1(self, **kw):
+        return (204, {}, None)
+
+    def delete_volumes_1234_metadata_key2(self, **kw):
+        return (204, {}, None)
+
+    def post_volumes_1234_metadata(self, **kw):
+        return (204, {}, {'metadata': {'test_key': 'test_value'}})
+
+    #
     # List all extensions
     #
     def get_extensions(self, **kw):
@@ -293,3 +367,38 @@ class FakeHTTPClient(base_client.HTTPClient):
             },
         ]
         return (200, {}, {"extensions": exts, })
+
+    #
+    # VolumeBackups
+    #
+
+    def get_backups_76a17945_3c6f_435c_975b_b5685db10b62(self, **kw):
+        base_uri = 'http://localhost:8776'
+        tenant_id = '0fa851f6668144cf9cd8c8419c1646c1'
+        backup1 = '76a17945-3c6f-435c-975b-b5685db10b62'
+        return (200, {},
+                {'backup': _stub_backup_full(backup1, base_uri, tenant_id)})
+
+    def get_backups_detail(self, **kw):
+        base_uri = 'http://localhost:8776'
+        tenant_id = '0fa851f6668144cf9cd8c8419c1646c1'
+        backup1 = '76a17945-3c6f-435c-975b-b5685db10b62'
+        backup2 = 'd09534c6-08b8-4441-9e87-8976f3a8f699'
+        return (200, {},
+                {'backups': [
+                    _stub_backup_full(backup1, base_uri, tenant_id),
+                    _stub_backup_full(backup2, base_uri, tenant_id)]})
+
+    def delete_backups_76a17945_3c6f_435c_975b_b5685db10b62(self, **kw):
+        return (202, {}, None)
+
+    def post_backups(self, **kw):
+        base_uri = 'http://localhost:8776'
+        tenant_id = '0fa851f6668144cf9cd8c8419c1646c1'
+        backup1 = '76a17945-3c6f-435c-975b-b5685db10b62'
+        return (202, {},
+                {'backup': _stub_backup(backup1, base_uri, tenant_id)})
+
+    def post_backups_76a17945_3c6f_435c_975b_b5685db10b62_restore(self, **kw):
+        return (200, {},
+                {'restore': _stub_restore()})

@@ -15,7 +15,7 @@
 #    under the License.
 
 """
-Command-line interface to the OpenStack Volume API.
+Command-line interface to the OpenStack Cinder API.
 """
 
 import argparse
@@ -30,8 +30,10 @@ import logging
 from cinderclient import client
 from cinderclient import exceptions as exc
 import cinderclient.extension
+from cinderclient.openstack.common import strutils
 from cinderclient import utils
 from cinderclient.v1 import shell as shell_v1
+from cinderclient.v2 import shell as shell_v2
 
 DEFAULT_OS_VOLUME_API_VERSION = "1"
 DEFAULT_CINDER_ENDPOINT_TYPE = 'publicURL'
@@ -79,6 +81,10 @@ class OpenStackCinderShell(object):
                             action='store_true',
                             help=argparse.SUPPRESS)
 
+        parser.add_argument('--version',
+                            action='version',
+                            version=cinderclient.__version__)
+
         parser.add_argument('--debug',
                             action='store_true',
                             default=utils.env('CINDERCLIENT_DEBUG',
@@ -107,6 +113,14 @@ class OpenStackCinderShell(object):
                                               'CINDER_PROJECT_ID'),
                             help='Defaults to env[OS_TENANT_NAME].')
         parser.add_argument('--os_tenant_name',
+                            help=argparse.SUPPRESS)
+
+        parser.add_argument('--os-tenant-id',
+                            metavar='<auth-tenant-id>',
+                            default=utils.env('OS_TENANT_ID',
+                                              'CINDER_TENANT_ID'),
+                            help='Defaults to env[OS_TENANT_ID].')
+        parser.add_argument('--os_tenant_id',
                             help=argparse.SUPPRESS)
 
         parser.add_argument('--os-auth-url',
@@ -158,7 +172,7 @@ class OpenStackCinderShell(object):
                             metavar='<compute-api-ver>',
                             default=utils.env('OS_VOLUME_API_VERSION',
                             default=DEFAULT_OS_VOLUME_API_VERSION),
-                            help='Accepts 1,defaults '
+                            help='Accepts 1 or 2,defaults '
                                  'to env[OS_VOLUME_API_VERSION].')
         parser.add_argument('--os_volume_api_version',
                             help=argparse.SUPPRESS)
@@ -219,7 +233,7 @@ class OpenStackCinderShell(object):
         try:
             actions_module = {
                 '1.1': shell_v1,
-                '2': shell_v1,
+                '2': shell_v2,
             }[version]
         except KeyError:
             actions_module = shell_v1
@@ -345,13 +359,14 @@ class OpenStackCinderShell(object):
             return 0
 
         (os_username, os_password, os_tenant_name, os_auth_url,
-         os_region_name, endpoint_type, insecure,
+         os_region_name, os_tenant_id, endpoint_type, insecure,
          service_type, service_name, volume_service_name,
          username, apikey, projectid, url, region_name, cacert) = (
              args.os_username, args.os_password,
              args.os_tenant_name, args.os_auth_url,
-             args.os_region_name, args.endpoint_type,
-             args.insecure, args.service_type, args.service_name,
+             args.os_region_name, args.os_tenant_id,
+             args.endpoint_type, args.insecure,
+             args.service_type, args.service_name,
              args.volume_service_name, args.username,
              args.apikey, args.projectid,
              args.url, args.region_name, args.os_cacert)
@@ -383,11 +398,11 @@ class OpenStackCinderShell(object):
                 else:
                     os_password = apikey
 
-            if not os_tenant_name:
+            if not (os_tenant_name or os_tenant_id):
                 if not projectid:
-                    raise exc.CommandError("You must provide a tenant name "
-                                           "via either --os-tenant-name or "
-                                           "env[OS_TENANT_NAME]")
+                    raise exc.CommandError("You must provide a tenant_id "
+                                           "via either --os-tenant-id or "
+                                           "env[OS_TENANT_ID]")
                 else:
                     os_tenant_name = projectid
 
@@ -402,10 +417,10 @@ class OpenStackCinderShell(object):
             if not os_region_name and region_name:
                 os_region_name = region_name
 
-        if not os_tenant_name:
+        if not (os_tenant_name or os_tenant_id):
             raise exc.CommandError(
-                "You must provide a tenant name "
-                "via either --os-tenant-name or env[OS_TENANT_NAME]")
+                "You must provide a tenant_id "
+                "via either --os-tenant-id or env[OS_TENANT_ID]")
 
         if not os_auth_url:
             raise exc.CommandError(
@@ -415,6 +430,7 @@ class OpenStackCinderShell(object):
         self.cs = client.Client(options.os_volume_api_version, os_username,
                                 os_password, os_tenant_name, os_auth_url,
                                 insecure, region_name=os_region_name,
+                                tenant_id=os_tenant_id,
                                 endpoint_type=endpoint_type,
                                 extensions=self.extensions,
                                 service_type=service_type,
@@ -428,7 +444,7 @@ class OpenStackCinderShell(object):
             if not utils.isunauthenticated(args.func):
                 self.cs.authenticate()
         except exc.Unauthorized:
-            raise exc.CommandError("Invalid OpenStack Nova credentials.")
+            raise exc.CommandError("Invalid OpenStack Cinder credentials.")
         except exc.AuthorizationFailure:
             raise exc.CommandError("Unable to authorize user")
 
@@ -440,7 +456,8 @@ class OpenStackCinderShell(object):
             extension.run_hooks(hook_type, *args, **kwargs)
 
     def do_bash_completion(self, args):
-        """
+        """Print arguments for bash_completion.
+
         Prints all of the commands and options to stdout so that the
         cinder.bash_completion script doesn't have to hard code them.
         """
@@ -481,11 +498,16 @@ class OpenStackHelpFormatter(argparse.HelpFormatter):
 
 def main():
     try:
-        OpenStackCinderShell().main(sys.argv[1:])
-
+        OpenStackCinderShell().main(map(strutils.safe_decode, sys.argv[1:]))
+    except KeyboardInterrupt:
+        print >> sys.stderr, "... terminating cinder client"
+        sys.exit(130)
     except Exception, e:
         logger.debug(e, exc_info=1)
-        print >> sys.stderr, "ERROR: %s" % str(e)
+        message = e.message
+        if not isinstance(message, basestring):
+            message = str(message)
+        print >> sys.stderr, "ERROR: %s" % strutils.safe_encode(message)
         sys.exit(1)
 
 
