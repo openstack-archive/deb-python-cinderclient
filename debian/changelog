@@ -3,6 +3,7 @@ python-cinderclient (1:1.0.4-1) unstable; urgency=low
   * Uploading to unstable.
   * New upstream release.
   * Added export OSLO_PACKAGE_VERSION=$(VERSION) in debian/rules.
+  * Fixed the launch of unit tests.
 
  -- Thomas Goirand <zigo@debian.org>  Mon, 13 May 2013 09:53:36 +0000
 
