@@ -12,6 +12,7 @@ override_dh_auto_clean:
 	dh_auto_clean
 	rm -f cinderclient/versioninfo
 	rm -rf setuptools_git-*.egg
+	rm -rf build
 
 override_dh_auto_configure:
 	echo $(VERSION) > cinderclient/versioninfo
