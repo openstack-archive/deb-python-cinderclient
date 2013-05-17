@@ -1,3 +1,9 @@
+python-cinderclient (1:1.0.4-2) unstable; urgency=low
+
+  * Added missing build-dependencies: python-setputools-git and python-subunit.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 17 May 2013 17:39:51 +0000
+
 python-cinderclient (1:1.0.4-1) unstable; urgency=low
 
   * Uploading to unstable.
