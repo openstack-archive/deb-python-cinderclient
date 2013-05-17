@@ -18,6 +18,7 @@ Build-Depends-Indep: openstack-pkg-tools,
  python-mock,
  pep8,
  python-sphinx,
+ python-subunit,
  python-unittest2
 Standards-Version: 3.9.3
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
