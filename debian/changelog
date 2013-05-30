@@ -1,3 +1,9 @@
+python-cinderclient (1:1.0.4-3) UNRELEASED; urgency=low
+
+  * Ran wrap-and-sort.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 30 May 2013 13:42:32 +0800
+
 python-cinderclient (1:1.0.4-2) unstable; urgency=low
 
   * Added missing build-dependencies: python-setputools-git and python-subunit.

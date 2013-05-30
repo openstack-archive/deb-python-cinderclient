@@ -6,20 +6,19 @@ Uploaders: Julien Danjou <acid@debian.org>,
            Thomas Goirand <zigo@debian.org>,
            Ghe Rivero <ghe.rivero@stackops.com>,
            Mehdi Abaakouk <sileht@sileht.net>
-Build-Depends: debhelper (>= 9),
- python-all (>= 2.6.6-3~)
+Build-Depends: debhelper (>= 9), python-all (>= 2.6.6-3~)
 Build-Depends-Indep: openstack-pkg-tools,
- python-setuptools,
- python-setuptools-git,
- python-nose,
- python-httplib2,
- python-prettytable,
- python-simplejson,
- python-mock,
- pep8,
- python-sphinx,
- python-subunit,
- python-unittest2
+                     pep8,
+                     python-httplib2,
+                     python-mock,
+                     python-nose,
+                     python-prettytable,
+                     python-setuptools,
+                     python-setuptools-git,
+                     python-simplejson,
+                     python-sphinx,
+                     python-subunit,
+                     python-unittest2
 Standards-Version: 3.9.3
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
@@ -28,10 +27,11 @@ Homepage: https://github.com/openstack/python-cinderclient
 Package: python-cinderclient
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: ${python:Depends}, ${misc:Depends}, 
- python-httplib2,
- python-prettytable,
- python-simplejson
+Depends: python-httplib2,
+         python-prettytable,
+         python-simplejson,
+         ${misc:Depends},
+         ${python:Depends}
 Provides: ${python:Provides}
 Description: python bindings to the OpenStack Volume API
  Cinder is a block storage as service system for the Openstack cloud computing
