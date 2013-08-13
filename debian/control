@@ -12,13 +12,17 @@ Build-Depends-Indep: openstack-pkg-tools,
                      python-httplib2,
                      python-mock,
                      python-nose,
+                     python-pbr (>= 0.5.21),
                      python-prettytable,
+                     python-requests (>= 1.1),
                      python-setuptools,
                      python-setuptools-git,
                      python-simplejson,
+                     python-six,
                      python-sphinx,
                      python-subunit,
-                     python-unittest2
+                     python-unittest2,
+                     testrepository (>= 0.0.17)
 Standards-Version: 3.9.3
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
@@ -28,8 +32,11 @@ Package: python-cinderclient
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: python-httplib2,
+         python-pbr (>= 0.5.21),
          python-prettytable,
+         python-requests (>= 1.1),
          python-simplejson,
+         python-six,
          ${misc:Depends},
          ${python:Depends}
 Provides: ${python:Provides}

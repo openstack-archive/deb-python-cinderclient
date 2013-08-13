@@ -2,6 +2,9 @@ python-cinderclient (1:1.0.5-1) unstable; urgency=low
 
   * New upstream release.
   * Ran wrap-and-sort.
+  * Now build-depends python-pbr (>= 0.5.20), testrepository.
+  * Unit tests are now using testrepository.
+  * Added (build-)depends: python-six.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 30 May 2013 13:42:32 +0800
 
