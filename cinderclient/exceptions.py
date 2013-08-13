@@ -1,4 +1,18 @@
 # Copyright 2010 Jacob Kaplan-Moss
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Exception definitions.
 """
@@ -6,7 +20,12 @@ Exception definitions.
 
 class UnsupportedVersion(Exception):
     """Indicates that the user is trying to use an unsupported
-    version of the API"""
+    version of the API.
+    """
+    pass
+
+
+class InvalidAPIVersion(Exception):
     pass
 
 
@@ -24,7 +43,8 @@ class NoUniqueMatch(Exception):
 
 class NoTokenLookupException(Exception):
     """This form of authentication does not support looking up
-       endpoints from an existing token."""
+       endpoints from an existing token.
+    """
     pass
 
 
@@ -141,7 +161,7 @@ def from_response(response, body):
         message = "n/a"
         details = "n/a"
         if hasattr(body, 'keys'):
-            error = body[body.keys()[0]]
+            error = body[list(body.keys())[0]]
             message = error.get('message', None)
             details = error.get('details', None)
         return cls(code=response.status_code, message=message, details=details,

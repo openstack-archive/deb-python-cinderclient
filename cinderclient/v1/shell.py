@@ -15,13 +15,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from __future__ import print_function
+
 import argparse
+import copy
 import os
 import sys
 import time
 
 from cinderclient import exceptions
 from cinderclient import utils
+from cinderclient.v1 import availability_zones
 
 
 def _poll_for_status(poll_fn, obj_id, action, final_ok_states,
@@ -39,17 +43,17 @@ def _poll_for_status(poll_fn, obj_id, action, final_ok_states,
         sys.stdout.write(msg)
         sys.stdout.flush()
 
-    print
+    print()
     while True:
         obj = poll_fn(obj_id)
         status = obj.status.lower()
         progress = getattr(obj, 'progress', None) or 0
         if status in final_ok_states:
             print_progress(100)
-            print "\nFinished"
+            print("\nFinished")
             break
         elif status == "error":
-            print "\nError %(action)s instance" % locals()
+            print("\nError %(action)s instance" % {'action': action})
             break
         else:
             print_progress(progress)
@@ -71,6 +75,11 @@ def _find_backup(cs, backup):
     return utils.find_resource(cs.backups, backup)
 
 
+def _find_transfer(cs, transfer):
+    """Get a transfer by ID."""
+    return utils.find_resource(cs.transfers, transfer)
+
+
 def _print_volume(volume):
     utils.print_dict(volume._info)
 
@@ -79,9 +88,13 @@ def _print_volume_snapshot(snapshot):
     utils.print_dict(snapshot._info)
 
 
+def _print_volume_image(image):
+    utils.print_dict(image[1]['os-volume_upload_image'])
+
+
 def _translate_keys(collection, convert):
     for item in collection:
-        keys = item.__dict__.keys()
+        keys = list(item.__dict__.keys())
         for from_key, to_key in convert:
             if from_key in keys and to_key not in keys:
                 setattr(item, to_key, item._info[from_key])
@@ -94,6 +107,11 @@ def _translate_volume_keys(collection):
 
 def _translate_volume_snapshot_keys(collection):
     convert = [('displayName', 'display_name'), ('volumeId', 'volume_id')]
+    _translate_keys(collection, convert)
+
+
+def _translate_availability_zone_keys(collection):
+    convert = [('zoneName', 'name'), ('zoneState', 'status')]
     _translate_keys(collection, convert)
 
 
@@ -266,6 +284,18 @@ def do_force_delete(cs, args):
     volume.force_delete()
 
 
+@utils.arg('volume', metavar='<volume>', help='ID of the volume to modify.')
+@utils.arg('--state', metavar='<state>', default='available',
+           help=('Indicate which state to assign the volume. Options include '
+                 'available, error, creating, deleting, error_deleting. If no '
+                 'state is provided, available will be used.'))
+@utils.service_type('volume')
+def do_reset_state(cs, args):
+    """Explicitly update the state of a volume."""
+    volume = _find_volume(cs, args.volume)
+    volume.reset_state(args.state)
+
+
 @utils.arg('volume', metavar='<volume>', help='ID of the volume to rename.')
 @utils.arg('display_name', nargs='?', metavar='<display-name>',
            help='New display-name for the volume.')
@@ -304,7 +334,7 @@ def do_metadata(cs, args):
     if args.action == 'set':
         cs.volumes.set_metadata(volume, metadata)
     elif args.action == 'unset':
-        cs.volumes.delete_metadata(volume, metadata.keys())
+        cs.volumes.delete_metadata(volume, list(metadata.keys()))
 
 
 @utils.arg(
@@ -424,6 +454,21 @@ def do_snapshot_rename(cs, args):
     _find_volume_snapshot(cs, args.snapshot).update(**kwargs)
 
 
+@utils.arg('snapshot', metavar='<snapshot>',
+           help='ID of the snapshot to modify.')
+@utils.arg('--state', metavar='<state>',
+           default='available',
+           help=('Indicate which state to assign the snapshot. '
+                 'Options include available, error, creating, deleting, '
+                 'error_deleting. If no state is provided, '
+                 'available will be used.'))
+@utils.service_type('volume')
+def do_snapshot_reset_state(cs, args):
+    """Explicitly update the state of a snapshot."""
+    snapshot = _find_volume_snapshot(cs, args.snapshot)
+    snapshot.reset_state(args.state)
+
+
 def _print_volume_type_list(vtypes):
     utils.print_list(vtypes, ['ID', 'Name'])
 
@@ -462,7 +507,7 @@ def do_type_create(cs, args):
            help="Unique ID of the volume type to delete")
 @utils.service_type('volume')
 def do_type_delete(cs, args):
-    """Delete a specific volume type"""
+    """Delete a specific volume type."""
     cs.volume_types.delete(args.id)
 
 
@@ -489,28 +534,35 @@ def do_type_key(cs, args):
         if args.action == 'set':
             vtype.set_keys(keypair)
         elif args.action == 'unset':
-            vtype.unset_keys(keypair.keys())
+            vtype.unset_keys(list(keypair.keys()))
 
 
 def do_endpoints(cs, args):
-    """Discover endpoints that get returned from the authenticate services"""
+    """Discover endpoints that get returned from the authenticate services."""
     catalog = cs.client.service_catalog.catalog
     for e in catalog['access']['serviceCatalog']:
         utils.print_dict(e['endpoints'][0], e['name'])
 
 
 def do_credentials(cs, args):
-    """Show user credentials returned from auth"""
+    """Show user credentials returned from auth."""
     catalog = cs.client.service_catalog.catalog
     utils.print_dict(catalog['access']['user'], "User Credentials")
     utils.print_dict(catalog['access']['token'], "Token")
+
 
 _quota_resources = ['volumes', 'snapshots', 'gigabytes']
 
 
 def _quota_show(quotas):
     quota_dict = {}
-    for resource in _quota_resources:
+    for resource in quotas._info.keys():
+        good_name = False
+        for name in _quota_resources:
+            if resource.startswith(name):
+                good_name = True
+        if not good_name:
+            continue
         quota_dict[resource] = getattr(quotas, resource, None)
     utils.print_dict(quota_dict)
 
@@ -520,6 +572,8 @@ def _quota_update(manager, identifier, args):
     for resource in _quota_resources:
         val = getattr(args, resource, None)
         if val is not None:
+            if args.volume_type:
+                resource = resource + '_%s' % args.volume_type
             updates[resource] = val
 
     if updates:
@@ -558,6 +612,10 @@ def do_quota_defaults(cs, args):
            metavar='<gigabytes>',
            type=int, default=None,
            help='New value for the "gigabytes" quota.')
+@utils.arg('--volume-type',
+           metavar='<volume_type_name>',
+           default=None,
+           help='Volume type (Optional, Default=None)')
 @utils.service_type('volume')
 def do_quota_update(cs, args):
     """Update the quotas for a tenant."""
@@ -588,6 +646,10 @@ def do_quota_class_show(cs, args):
            metavar='<gigabytes>',
            type=int, default=None,
            help='New value for the "gigabytes" quota.')
+@utils.arg('--volume-type',
+           metavar='<volume_type_name>',
+           default=None,
+           help='Volume type (Optional, Default=None)')
 @utils.service_type('volume')
 def do_quota_class_update(cs, args):
     """Update the quotas for a quota class."""
@@ -649,10 +711,10 @@ def _find_volume_type(cs, vtype):
 def do_upload_to_image(cs, args):
     """Upload volume to image service as image."""
     volume = _find_volume(cs, args.volume_id)
-    volume.upload_to_image(args.force,
-                           args.image_name,
-                           args.container_format,
-                           args.disk_format)
+    _print_volume_image(volume.upload_to_image(args.force,
+                                               args.image_name,
+                                               args.container_format,
+                                               args.disk_format))
 
 
 @utils.arg('volume', metavar='<volume>',
@@ -717,3 +779,171 @@ def do_backup_restore(cs, args):
     """Restore a backup."""
     cs.restores.restore(args.backup,
                         args.volume_id)
+
+
+@utils.arg('volume', metavar='<volume>',
+           help='ID of the volume to transfer.')
+@utils.arg('--display-name', metavar='<display-name>',
+           help='Optional transfer name. (Default=None)',
+           default=None)
+@utils.service_type('volume')
+def do_transfer_create(cs, args):
+    """Creates a volume transfer."""
+    transfer = cs.transfers.create(args.volume,
+                                   args.display_name)
+    info = dict()
+    info.update(transfer._info)
+
+    if 'links' in info:
+        info.pop('links')
+
+    utils.print_dict(info)
+
+
+@utils.arg('transfer', metavar='<transfer>',
+           help='ID of the transfer to delete.')
+@utils.service_type('volume')
+def do_transfer_delete(cs, args):
+    """Undo a transfer."""
+    transfer = _find_transfer(cs, args.transfer)
+    transfer.delete()
+
+
+@utils.arg('transfer', metavar='<transfer>',
+           help='ID of the transfer to accept.')
+@utils.arg('auth_key', metavar='<auth_key>',
+           help='Auth key of the transfer to accept.')
+@utils.service_type('volume')
+def do_transfer_accept(cs, args):
+    """Accepts a volume transfer."""
+    transfer = cs.transfers.accept(args.transfer, args.auth_key)
+    info = dict()
+    info.update(transfer._info)
+
+    if 'links' in info:
+        info.pop('links')
+
+    utils.print_dict(info)
+
+
+@utils.service_type('volume')
+def do_transfer_list(cs, args):
+    """List all the transfers."""
+    transfers = cs.transfers.list()
+    columns = ['ID', 'Volume ID', 'Name']
+    utils.print_list(transfers, columns)
+
+
+@utils.arg('transfer', metavar='<transfer>',
+           help='ID of the transfer to accept.')
+@utils.service_type('volume')
+def do_transfer_show(cs, args):
+    """Show details about a transfer."""
+    transfer = _find_transfer(cs, args.transfer)
+    info = dict()
+    info.update(transfer._info)
+
+    if 'links' in info:
+        info.pop('links')
+
+    utils.print_dict(info)
+
+
+@utils.arg('volume', metavar='<volume>', help='ID of the volume to extend.')
+@utils.arg('new_size',
+           metavar='<new-size>',
+           type=int,
+           help='New size of volume in GB')
+@utils.service_type('volume')
+def do_extend(cs, args):
+    """Attempt to extend the size of an existing volume."""
+    volume = _find_volume(cs, args.volume)
+    cs.volumes.extend(volume, args.new_size)
+
+
+@utils.arg('--host', metavar='<hostname>', default=None,
+           help='Name of host.')
+@utils.arg('--binary', metavar='<binary>', default=None,
+           help='Service binary.')
+@utils.service_type('volume')
+def do_service_list(cs, args):
+    """List all the services. Filter by host & service binary."""
+    result = cs.services.list(host=args.host, binary=args.binary)
+    columns = ["Binary", "Host", "Zone", "Status", "State", "Updated_at"]
+    utils.print_list(result, columns)
+
+
+@utils.arg('host', metavar='<hostname>', help='Name of host.')
+@utils.arg('binary', metavar='<binary>', help='Service binary.')
+@utils.service_type('volume')
+def do_service_enable(cs, args):
+    """Enable the service."""
+    cs.services.enable(args.host, args.binary)
+
+
+@utils.arg('host', metavar='<hostname>', help='Name of host.')
+@utils.arg('binary', metavar='<binary>', help='Service binary.')
+@utils.service_type('volume')
+def do_service_disable(cs, args):
+    """Disable the service."""
+    cs.services.disable(args.host, args.binary)
+
+
+def _treeizeAvailabilityZone(zone):
+    """Build a tree view for availability zones."""
+    AvailabilityZone = availability_zones.AvailabilityZone
+
+    az = AvailabilityZone(zone.manager,
+                          copy.deepcopy(zone._info), zone._loaded)
+    result = []
+
+    # Zone tree view item
+    az.zoneName = zone.zoneName
+    az.zoneState = ('available'
+                    if zone.zoneState['available'] else 'not available')
+    az._info['zoneName'] = az.zoneName
+    az._info['zoneState'] = az.zoneState
+    result.append(az)
+
+    if getattr(zone, "hosts", None) and zone.hosts is not None:
+        for (host, services) in zone.hosts.items():
+            # Host tree view item
+            az = AvailabilityZone(zone.manager,
+                                  copy.deepcopy(zone._info), zone._loaded)
+            az.zoneName = '|- %s' % host
+            az.zoneState = ''
+            az._info['zoneName'] = az.zoneName
+            az._info['zoneState'] = az.zoneState
+            result.append(az)
+
+            for (svc, state) in services.items():
+                # Service tree view item
+                az = AvailabilityZone(zone.manager,
+                                      copy.deepcopy(zone._info), zone._loaded)
+                az.zoneName = '| |- %s' % svc
+                az.zoneState = '%s %s %s' % (
+                               'enabled' if state['active'] else 'disabled',
+                               ':-)' if state['available'] else 'XXX',
+                               state['updated_at'])
+                az._info['zoneName'] = az.zoneName
+                az._info['zoneState'] = az.zoneState
+                result.append(az)
+    return result
+
+
+@utils.service_type('volume')
+def do_availability_zone_list(cs, _args):
+    """List all the availability zones."""
+    try:
+        availability_zones = cs.availability_zones.list()
+    except exceptions.Forbidden as e:  # policy doesn't allow probably
+        try:
+            availability_zones = cs.availability_zones.list(detailed=False)
+        except Exception:
+            raise e
+
+    result = []
+    for zone in availability_zones:
+        result += _treeizeAvailabilityZone(zone)
+    _translate_availability_zone_keys(result)
+    utils.print_list(result, ['Name', 'Status'])

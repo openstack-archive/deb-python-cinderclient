@@ -18,6 +18,8 @@
 Command-line interface to the OpenStack Cinder API.
 """
 
+from __future__ import print_function
+
 import argparse
 import glob
 import imp
@@ -26,6 +28,8 @@ import os
 import pkgutil
 import sys
 import logging
+
+import six
 
 from cinderclient import client
 from cinderclient import exceptions as exc
@@ -448,6 +452,15 @@ class OpenStackCinderShell(object):
         except exc.AuthorizationFailure:
             raise exc.CommandError("Unable to authorize user")
 
+        endpoint_api_version = self.cs.get_volume_api_version_from_endpoint()
+        if endpoint_api_version != options.os_volume_api_version:
+            msg = (("Volume API version is set to %s "
+                    "but you are accessing a %s endpoint. "
+                    "Change its value via either --os-volume-api-version "
+                    "or env[OS_VOLUME_API_VERSION]")
+                   % (options.os_volume_api_version, endpoint_api_version))
+            raise exc.InvalidAPIVersion(msg)
+
         args.func(self.cs, args)
 
     def _run_extension_hooks(self, hook_type, *args, **kwargs):
@@ -463,14 +476,14 @@ class OpenStackCinderShell(object):
         """
         commands = set()
         options = set()
-        for sc_str, sc in self.subcommands.items():
+        for sc_str, sc in list(self.subcommands.items()):
             commands.add(sc_str)
-            for option in sc._optionals._option_string_actions.keys():
+            for option in list(sc._optionals._option_string_actions.keys()):
                 options.add(option)
 
         commands.remove('bash-completion')
         commands.remove('bash_completion')
-        print ' '.join(commands | options)
+        print(' '.join(commands | options))
 
     @utils.arg('command', metavar='<subcommand>', nargs='?',
                help='Display help for <subcommand>')
@@ -498,16 +511,20 @@ class OpenStackHelpFormatter(argparse.HelpFormatter):
 
 def main():
     try:
-        OpenStackCinderShell().main(map(strutils.safe_decode, sys.argv[1:]))
+        if sys.version_info >= (3, 0):
+            OpenStackCinderShell().main(sys.argv[1:])
+        else:
+            OpenStackCinderShell().main(map(strutils.safe_decode,
+                                        sys.argv[1:]))
     except KeyboardInterrupt:
-        print >> sys.stderr, "... terminating cinder client"
+        print("... terminating cinder client", file=sys.stderr)
         sys.exit(130)
-    except Exception, e:
+    except Exception as e:
         logger.debug(e, exc_info=1)
         message = e.message
-        if not isinstance(message, basestring):
+        if not isinstance(message, six.string_types):
             message = str(message)
-        print >> sys.stderr, "ERROR: %s" % strutils.safe_encode(message)
+        print("ERROR: %s" % strutils.safe_encode(message), file=sys.stderr)
         sys.exit(1)
 
 

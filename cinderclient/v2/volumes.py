@@ -15,7 +15,11 @@
 
 """Volume interface (v2 extension)."""
 
-import urllib
+import six
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
 
 from cinderclient import base
 
@@ -86,8 +90,8 @@ class Volume(base.Resource):
     def upload_to_image(self, force, image_name, container_format,
                         disk_format):
         """Upload a volume to image service as an image."""
-        self.manager.upload_to_image(self, force, image_name, container_format,
-                                     disk_format)
+        return self.manager.upload_to_image(self, force, image_name,
+                                            container_format, disk_format)
 
     def force_delete(self):
         """Delete the specified volume ignoring its current state.
@@ -95,6 +99,18 @@ class Volume(base.Resource):
         :param volume: The UUID of the volume to force-delete.
         """
         self.manager.force_delete(self)
+
+    def reset_state(self, state):
+        """Update the volume with the provided state."""
+        self.manager.reset_state(self, state)
+
+    def extend(self, volume, new_size):
+        """Extend the size of the specified volume.
+        :param volume: The UUID of the volume to extend
+        :param new_size: The desired size to extend volume to.
+        """
+
+        self.manager.extend(self, volume, new_size)
 
 
 class VolumeManager(base.ManagerWithFind):
@@ -105,7 +121,7 @@ class VolumeManager(base.ManagerWithFind):
                name=None, description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
-               metadata=None, imageRef=None):
+               metadata=None, imageRef=None, scheduler_hints=None):
         """Create a volume.
 
         :param size: Size of volume in GB
@@ -120,7 +136,9 @@ class VolumeManager(base.ManagerWithFind):
         :param metadata: Optional metadata to set on volume creation
         :param imageRef: reference to an image stored in glance
         :param source_volid: ID of source volume to clone from
-        """
+        :param scheduler_hints: (optional extension) arbitrary key-value pairs
+                            specified by the client to help boot an instance
+       """
 
         if metadata is None:
             volume_metadata = {}
@@ -140,6 +158,7 @@ class VolumeManager(base.ManagerWithFind):
                            'metadata': volume_metadata,
                            'imageRef': imageRef,
                            'source_volid': source_volid,
+                           'scheduler_hints': scheduler_hints,
                            }}
         return self._create('/volumes', body, 'volume')
 
@@ -161,11 +180,11 @@ class VolumeManager(base.ManagerWithFind):
 
         qparams = {}
 
-        for opt, val in search_opts.iteritems():
+        for opt, val in six.iteritems(search_opts):
             if val:
                 qparams[opt] = val
 
-        query_string = "?%s" % urllib.urlencode(qparams) if qparams else ""
+        query_string = "?%s" % urlencode(qparams) if qparams else ""
 
         detail = ""
         if detailed:
@@ -306,3 +325,12 @@ class VolumeManager(base.ManagerWithFind):
 
     def force_delete(self, volume):
         return self._action('os-force_delete', base.getid(volume))
+
+    def reset_state(self, volume, state):
+        """Update the provided volume with the provided state."""
+        return self._action('os-reset_status', volume, {'status': state})
+
+    def extend(self, volume, new_size):
+        return self._action('os-extend',
+                            base.getid(volume),
+                            {'new_size': new_size})

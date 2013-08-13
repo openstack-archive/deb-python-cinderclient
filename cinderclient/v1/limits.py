@@ -1,17 +1,30 @@
-# Copyright 2011 OpenStack LLC.
+# Copyright 2011 OpenStack Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from cinderclient import base
 
 
 class Limits(base.Resource):
-    """A collection of RateLimit and AbsoluteLimit objects"""
+    """A collection of RateLimit and AbsoluteLimit objects."""
 
     def __repr__(self):
         return "<Limits>"
 
     @property
     def absolute(self):
-        for (name, value) in self._info['absolute'].items():
+        for (name, value) in list(self._info['absolute'].items()):
             yield AbsoluteLimit(name, value)
 
     @property
@@ -26,7 +39,7 @@ class Limits(base.Resource):
 
 
 class RateLimit(object):
-    """Data model that represents a flattened view of a single rate limit"""
+    """Data model that represents a flattened view of a single rate limit."""
 
     def __init__(self, verb, uri, regex, value, remain,
                  unit, next_available):
@@ -52,7 +65,7 @@ class RateLimit(object):
 
 
 class AbsoluteLimit(object):
-    """Data model that represents a single absolute limit"""
+    """Data model that represents a single absolute limit."""
 
     def __init__(self, name, value):
         self.name = name
@@ -66,7 +79,7 @@ class AbsoluteLimit(object):
 
 
 class LimitsManager(base.Manager):
-    """Manager object used to interact with limits resource"""
+    """Manager object used to interact with limits resource."""
 
     resource_class = Limits
 

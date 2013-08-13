@@ -1,15 +1,34 @@
-# Copyright 2010 Jacob Kaplan-Moss
 # Copyright 2011 OpenStack LLC.
+# Copyright 2010 Jacob Kaplan-Moss
 # Copyright 2011 Piston Cloud Computing, Inc.
-
 # All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 """
 OpenStack Client interface. Handles the REST calls and responses.
 """
 
+from __future__ import print_function
+
 import logging
 import os
-import urlparse
+
+try:
+    import urlparse
+except ImportError:
+    import urllib.parse as urlparse
+
 try:
     from eventlet import sleep
 except ImportError:
@@ -70,7 +89,7 @@ class HTTPClient(object):
                 self.verify_cert = True
 
         self._logger = logging.getLogger(__name__)
-        if self.http_log_debug:
+        if self.http_log_debug and not self._logger.handlers:
             ch = logging.StreamHandler()
             self._logger.setLevel(logging.DEBUG)
             self._logger.addHandler(ch)
@@ -195,7 +214,8 @@ class HTTPClient(object):
     def _extract_service_catalog(self, url, resp, body, extract_token=True):
         """See what the auth service told us and process the response.
         We may get redirected to another site, fail or actually get
-        back a service catalog with a token and our endpoints."""
+        back a service catalog with a token and our endpoints.
+        """
 
         if resp.status_code == 200:  # content must always present
             try:
@@ -216,13 +236,13 @@ class HTTPClient(object):
                 self.management_url = management_url.rstrip('/')
                 return None
             except exceptions.AmbiguousEndpoints:
-                print "Found more than one valid endpoint. Use a more " \
-                      "restrictive filter"
+                print("Found more than one valid endpoint. Use a more "
+                      "restrictive filter")
                 raise
             except KeyError:
                 raise exceptions.AuthorizationFailure()
             except exceptions.EndpointNotFound:
-                print "Could not find any suitable endpoint. Correct region?"
+                print("Could not find any suitable endpoint. Correct region?")
                 raise
 
         elif resp.status_code == 305:
@@ -357,6 +377,17 @@ class HTTPClient(object):
 
         return self._extract_service_catalog(url, resp, body)
 
+    def get_volume_api_version_from_endpoint(self):
+        magic_tuple = urlparse.urlsplit(self.management_url)
+        scheme, netloc, path, query, frag = magic_tuple
+        v = path.split("/")[1]
+        valid_versions = ['v1', 'v2']
+        if v not in valid_versions:
+            msg = "Invalid client version '%s'. must be one of: %s" % (
+                  (v, ', '.join(valid_versions)))
+            raise exceptions.UnsupportedVersion(msg)
+        return v[1:]
+
 
 def get_client_class(version):
     version_map = {
@@ -367,7 +398,7 @@ def get_client_class(version):
         client_path = version_map[str(version)]
     except (KeyError, ValueError):
         msg = "Invalid client version '%s'. must be one of: %s" % (
-            (version, ', '.join(version_map.keys())))
+            (version, ', '.join(list(version_map.keys()))))
         raise exceptions.UnsupportedVersion(msg)
 
     return utils.import_class(client_path)
