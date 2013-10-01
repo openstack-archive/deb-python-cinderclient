@@ -27,5 +27,5 @@ override_dh_install:
 
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test:
-	python setup.py testr
+	python setup.py testr --slowest --testr-args='--subunit  '
 endif
