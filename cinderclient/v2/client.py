@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC.
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -16,12 +16,14 @@
 from cinderclient import client
 from cinderclient.v1 import availability_zones
 from cinderclient.v2 import limits
+from cinderclient.v2 import qos_specs
 from cinderclient.v2 import quota_classes
 from cinderclient.v2 import quotas
 from cinderclient.v2 import services
 from cinderclient.v2 import volumes
 from cinderclient.v2 import volume_snapshots
 from cinderclient.v2 import volume_types
+from cinderclient.v2 import volume_encryption_types
 from cinderclient.v2 import volume_backups
 from cinderclient.v2 import volume_backups_restore
 from cinderclient.v1 import volume_transfers
@@ -44,7 +46,7 @@ class Client(object):
                  insecure=False, timeout=None, tenant_id=None,
                  proxy_tenant_id=None, proxy_token=None, region_name=None,
                  endpoint_type='publicURL', extensions=None,
-                 service_type='volume', service_name=None,
+                 service_type='volumev2', service_name=None,
                  volume_service_name=None, retries=None,
                  http_log_debug=False,
                  cacert=None):
@@ -57,6 +59,9 @@ class Client(object):
         self.volumes = volumes.VolumeManager(self)
         self.volume_snapshots = volume_snapshots.SnapshotManager(self)
         self.volume_types = volume_types.VolumeTypeManager(self)
+        self.volume_encryption_types = \
+            volume_encryption_types.VolumeEncryptionTypeManager(self)
+        self.qos_specs = qos_specs.QoSSpecsManager(self)
         self.quota_classes = quota_classes.QuotaClassSetManager(self)
         self.quotas = quotas.QuotaSetManager(self)
         self.backups = volume_backups.VolumeBackupManager(self)

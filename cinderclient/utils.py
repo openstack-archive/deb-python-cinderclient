@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -228,6 +228,11 @@ def find_resource(manager, name_or_id):
                " specific." % (manager.resource_class.__name__.lower(),
                                name_or_id))
         raise exceptions.CommandError(msg)
+
+
+def find_volume(cs, volume):
+    """Get a volume by name or ID."""
+    return find_resource(cs.volumes, volume)
 
 
 def _format_servers_list_networks(server):

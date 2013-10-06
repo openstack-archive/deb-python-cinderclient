@@ -1,4 +1,4 @@
-# Copyright 2011 OpenStack LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # Copyright 2010 Jacob Kaplan-Moss
 # Copyright 2011 Piston Cloud Computing, Inc.
 # All Rights Reserved.
@@ -79,6 +79,7 @@ class HTTPClient(object):
         self.auth_token = None
         self.proxy_token = proxy_token
         self.proxy_tenant_id = proxy_tenant_id
+        self.timeout = timeout
 
         if insecure:
             self.verify_cert = False
@@ -133,6 +134,8 @@ class HTTPClient(object):
             kwargs['data'] = json.dumps(kwargs['body'])
             del kwargs['body']
 
+        if self.timeout:
+            kwargs.setdefault('timeout', self.timeout)
         self.http_log_req((url, method,), kwargs)
         resp = requests.request(
             method,
@@ -192,7 +195,8 @@ class HTTPClient(object):
             except requests.exceptions.ConnectionError as e:
                 # Catch a connection refused from requests.request
                 self._logger.debug("Connection refused: %s" % e)
-                raise
+                msg = 'Unable to establish connection: %s' % e
+                raise exceptions.ConnectionError(msg)
             self._logger.debug(
                 "Failed attempt(%s of %s), retrying in %s seconds" %
                 (attempts, self.retries, backoff))

@@ -1,4 +1,4 @@
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # All Rights Reserved.
 #
@@ -89,4 +89,13 @@ class VolumesTest(utils.TestCase):
     def test_extend(self):
         v = cs.volumes.get('1234')
         cs.volumes.extend(v, 2)
+        cs.assert_called('POST', '/volumes/1234/action')
+
+    def test_get_encryption_metadata(self):
+        cs.volumes.get_encryption_metadata('1234')
+        cs.assert_called('GET', '/volumes/1234/encryption')
+
+    def test_migrate(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.migrate_volume(v, 'dest', False)
         cs.assert_called('POST', '/volumes/1234/action')

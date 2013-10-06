@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC.
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -112,6 +112,15 @@ class Volume(base.Resource):
 
         self.manager.extend(self, volume, new_size)
 
+    def migrate_volume(self, host, force_host_copy):
+        """Migrate the volume to a new host."""
+        self.manager.migrate_volume(self, host, force_host_copy)
+
+#    def migrate_volume_completion(self, old_volume, new_volume, error):
+#        """Complete the migration of the volume."""
+#        self.manager.migrate_volume_completion(self, old_volume,
+#                                               new_volume, error)
+
 
 class VolumeManager(base.ManagerWithFind):
     """Manage :class:`Volume` resources."""
@@ -129,7 +138,6 @@ class VolumeManager(base.ManagerWithFind):
         :param name: Name of the volume
         :param description: Description of the volume
         :param volume_type: Type of volume
-        :rtype: :class:`Volume`
         :param user_id: User id derived from context
         :param project_id: Project id derived from context
         :param availability_zone: Availability Zone to use
@@ -138,6 +146,7 @@ class VolumeManager(base.ManagerWithFind):
         :param source_volid: ID of source volume to clone from
         :param scheduler_hints: (optional extension) arbitrary key-value pairs
                             specified by the client to help boot an instance
+        :rtype: :class:`Volume`
        """
 
         if metadata is None:
@@ -334,3 +343,37 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-extend',
                             base.getid(volume),
                             {'new_size': new_size})
+
+    def get_encryption_metadata(self, volume_id):
+        """
+        Retrieve the encryption metadata from the desired volume.
+
+        :param volume_id: the id of the volume to query
+        :return: a dictionary of volume encryption metadata
+        """
+        return self._get("/volumes/%s/encryption" % volume_id)._info
+
+    def migrate_volume(self, volume, host, force_host_copy):
+        """Migrate volume to new host.
+
+        :param volume: The :class:`Volume` to migrate
+        :param host: The destination host
+        :param force_host_copy: Skip driver optimizations
+        """
+
+        return self._action('os-migrate_volume',
+                            volume,
+                            {'host': host, 'force_host_copy': force_host_copy})
+
+    def migrate_volume_completion(self, old_volume, new_volume, error):
+        """Complete the migration from the old volume to the temp new one.
+
+        :param old_volume: The original :class:`Volume` in the migration
+        :param new_volume: The new temporary :class:`Volume` in the migration
+        :param error: Inform of an error to cause migration cleanup
+        """
+
+        new_volume_id = base.getid(new_volume)
+        return self._action('os-migrate_volume_completion',
+                            old_volume,
+                            {'new_volume': new_volume_id, 'error': error})[1]

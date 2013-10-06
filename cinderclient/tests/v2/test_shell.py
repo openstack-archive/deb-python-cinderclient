@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC.
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -105,7 +105,7 @@ class ShellTest(utils.TestCase):
                            'status=available&volume_id=1234')
 
     def test_rename(self):
-        # basic rename with positional agruments
+        # basic rename with positional arguments
         self.run_command('rename 1234 new-name')
         expected = {'volume': {'name': 'new-name'}}
         self.assert_called('PUT', '/volumes/1234', body=expected)
@@ -121,12 +121,12 @@ class ShellTest(utils.TestCase):
             'description': 'new-description',
         }}
         self.assert_called('PUT', '/volumes/1234', body=expected)
-        # noop, the only all will be the lookup
-        self.run_command('rename 1234')
-        self.assert_called('GET', '/volumes/1234')
+
+        # Call rename with no arguments
+        self.assertRaises(SystemExit, self.run_command, 'rename')
 
     def test_rename_snapshot(self):
-        # basic rename with positional agruments
+        # basic rename with positional arguments
         self.run_command('snapshot-rename 1234 new-name')
         expected = {'snapshot': {'name': 'new-name'}}
         self.assert_called('PUT', '/snapshots/1234', body=expected)
@@ -143,9 +143,9 @@ class ShellTest(utils.TestCase):
             'description': 'new-description',
         }}
         self.assert_called('PUT', '/snapshots/1234', body=expected)
-        # noop, the only all will be the lookup
-        self.run_command('snapshot-rename 1234')
-        self.assert_called('GET', '/snapshots/1234')
+
+        # Call snapshot-rename with no arguments
+        self.assertRaises(SystemExit, self.run_command, 'snapshot-rename')
 
     def test_set_metadata_set(self):
         self.run_command('metadata 1234 set key1=val1 key2=val2')
@@ -181,3 +181,66 @@ class ShellTest(utils.TestCase):
         self.run_command('snapshot-reset-state --state error 1234')
         expected = {'os-reset_status': {'status': 'error'}}
         self.assert_called('POST', '/snapshots/1234/action', body=expected)
+
+    def test_encryption_type_list(self):
+        """
+        Test encryption-type-list shell command.
+
+        Verify a series of GET requests are made:
+        - one to get the volume type list information
+        - one per volume type to retrieve the encryption type information
+        """
+        self.run_command('encryption-type-list')
+        self.assert_called_anytime('GET', '/types')
+        self.assert_called_anytime('GET', '/types/1/encryption')
+        self.assert_called_anytime('GET', '/types/2/encryption')
+
+    def test_encryption_type_show(self):
+        """
+        Test encryption-type-show shell command.
+
+        Verify two GET requests are made per command invocation:
+        - one to get the volume type information
+        - one to get the encryption type information
+        """
+        self.run_command('encryption-type-show 1')
+        self.assert_called('GET', '/types/1/encryption')
+        self.assert_called_anytime('GET', '/types/1')
+
+    def test_encryption_type_create(self):
+        """
+        Test encryption-type-create shell command.
+
+        Verify GET and POST requests are made per command invocation:
+        - one GET request to retrieve the relevant volume type information
+        - one POST request to create the new encryption type
+        """
+        expected = {'encryption': {'cipher': None, 'key_size': None,
+                                   'provider': 'TestProvider',
+                                   'control_location': None}}
+        self.run_command('encryption-type-create 2 TestProvider')
+        self.assert_called('POST', '/types/2/encryption', body=expected)
+        self.assert_called_anytime('GET', '/types/2')
+
+    def test_encryption_type_update(self):
+        """
+        Test encryption-type-update shell command.
+
+        Verify two GETs/one PUT requests are made per command invocation:
+        - one GET request to retrieve the relevant volume type information
+        - one GET request to retrieve the relevant encryption type information
+        - one PUT request to update the encryption type information
+        """
+        self.skipTest("Not implemented")
+
+    def test_encryption_type_delete(self):
+        """
+        Test encryption-type-delete shell command.
+        """
+        self.skipTest("Not implemented")
+
+    def test_migrate_volume(self):
+        self.run_command('migrate 1234 fakehost --force-host-copy=True')
+        expected = {'os-migrate_volume': {'force_host_copy': 'True',
+                                          'host': 'fakehost'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
