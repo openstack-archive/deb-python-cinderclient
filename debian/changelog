@@ -1,4 +1,4 @@
-python-cinderclient (1:1.0.5-3) UNRELEASED; urgency=low
+python-cinderclient (1:1.0.6-1) unstable; urgency=low
 
   * Added --slowest --testr-args='--subunit  ' when calling testr.
 
