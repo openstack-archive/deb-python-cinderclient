@@ -95,7 +95,7 @@ def _print_volume_image(image):
 
 def _translate_keys(collection, convert):
     for item in collection:
-        keys = list(item.__dict__.keys())
+        keys = item.__dict__
         for from_key, to_key in convert:
             if from_key in keys and to_key not in keys:
                 setattr(item, to_key, item._info[from_key])
@@ -277,25 +277,41 @@ def do_create(cs, args):
     _print_volume(volume)
 
 
-@utils.arg('volume', metavar='<volume>',
-           help='Name or ID of the volume to delete.')
+@utils.arg('volume', metavar='<volume>', nargs='+',
+           help='Name or ID of the volume(s) to delete.')
 @utils.service_type('volume')
 def do_delete(cs, args):
-    """Remove a volume."""
-    volume = utils.find_volume(cs, args.volume)
-    volume.delete()
+    """Remove volume(s)."""
+    failure_count = 0
+    for volume in args.volume:
+        try:
+            utils.find_volume(cs, volume).delete()
+        except Exception as e:
+            failure_count += 1
+            print("Delete for volume %s failed: %s" % (volume, e))
+    if failure_count == len(args.volume):
+        raise exceptions.CommandError("Unable to delete any of the specified "
+                                      "volumes.")
 
 
-@utils.arg('volume', metavar='<volume>',
-           help='Name or ID of the volume to delete.')
+@utils.arg('volume', metavar='<volume>', nargs='+',
+           help='Name or ID of the volume(s) to delete.')
 @utils.service_type('volume')
 def do_force_delete(cs, args):
-    """Attempt forced removal of a volume, regardless of its state."""
-    volume = utils.find_volume(cs, args.volume)
-    volume.force_delete()
+    """Attempt forced removal of volume(s), regardless of the state(s)."""
+    failure_count = 0
+    for volume in args.volume:
+        try:
+            utils.find_volume(cs, volume).force_delete()
+        except Exception as e:
+            failure_count += 1
+            print("Delete for volume %s failed: %s" % (volume, e))
+    if failure_count == len(args.volume):
+        raise exceptions.CommandError("Unable to force delete any of the "
+                                      "specified volumes.")
 
 
-@utils.arg('volume', metavar='<volume>',
+@utils.arg('volume', metavar='<volume>', nargs='+',
            help='Name or ID of the volume to modify.')
 @utils.arg('--state', metavar='<state>', default='available',
            help=('Indicate which state to assign the volume. Options include '
@@ -304,8 +320,23 @@ def do_force_delete(cs, args):
 @utils.service_type('volume')
 def do_reset_state(cs, args):
     """Explicitly update the state of a volume."""
-    volume = utils.find_volume(cs, args.volume)
-    volume.reset_state(args.state)
+    failure_count = 0
+
+    single = (len(args.volume) == 1)
+
+    for volume in args.volume:
+        try:
+            utils.find_volume(cs, volume).reset_state(args.state)
+        except Exception as e:
+            failure_count += 1
+            msg = "Reset state for volume %s failed: %s" % (volume, e)
+            if not single:
+                print(msg)
+
+    if failure_count == len(args.volume):
+        if not single:
+            msg = "Unable to reset the state for any of the specified volumes."
+        raise exceptions.CommandError(msg)
 
 
 @utils.arg('volume', metavar='<volume>',
@@ -352,7 +383,9 @@ def do_metadata(cs, args):
     if args.action == 'set':
         cs.volumes.set_metadata(volume, metadata)
     elif args.action == 'unset':
-        cs.volumes.delete_metadata(volume, list(metadata.keys()))
+        # NOTE(zul): Make sure py2/py3 sorting is the same
+        cs.volumes.delete_metadata(volume, sorted(metadata.keys(),
+                                   reverse=True))
 
 
 @utils.arg(
@@ -480,7 +513,7 @@ def do_snapshot_rename(cs, args):
     _find_volume_snapshot(cs, args.snapshot).update(**kwargs)
 
 
-@utils.arg('snapshot', metavar='<snapshot>',
+@utils.arg('snapshot', metavar='<snapshot>', nargs='+',
            help='Name or ID of the snapshot to modify.')
 @utils.arg('--state', metavar='<state>',
            default='available',
@@ -491,8 +524,24 @@ def do_snapshot_rename(cs, args):
 @utils.service_type('volume')
 def do_snapshot_reset_state(cs, args):
     """Explicitly update the state of a snapshot."""
-    snapshot = _find_volume_snapshot(cs, args.snapshot)
-    snapshot.reset_state(args.state)
+    failure_count = 0
+
+    single = (len(args.snapshot) == 1)
+
+    for snapshot in args.snapshot:
+        try:
+            _find_volume_snapshot(cs, snapshot).reset_state(args.state)
+        except Exception as e:
+            failure_count += 1
+            msg = "Reset state for snapshot %s failed: %s" % (snapshot, e)
+            if not single:
+                print(msg)
+
+    if failure_count == len(args.snapshot):
+        if not single:
+            msg = ("Unable to reset the state for any of the the specified "
+                   "snapshots.")
+        raise exceptions.CommandError(msg)
 
 
 def _print_volume_type_list(vtypes):
@@ -560,7 +609,7 @@ def do_type_key(cs, args):
         if args.action == 'set':
             vtype.set_keys(keypair)
         elif args.action == 'unset':
-            vtype.unset_keys(list(keypair.keys()))
+            vtype.unset_keys(list(keypair))
 
 
 def do_endpoints(cs, args):
@@ -578,11 +627,12 @@ def do_credentials(cs, args):
 
 
 _quota_resources = ['volumes', 'snapshots', 'gigabytes']
+_quota_infos = ['Type', 'In_use', 'Reserved', 'Limit']
 
 
 def _quota_show(quotas):
     quota_dict = {}
-    for resource in quotas._info.keys():
+    for resource in quotas._info:
         good_name = False
         for name in _quota_resources:
             if resource.startswith(name):
@@ -591,6 +641,22 @@ def _quota_show(quotas):
             continue
         quota_dict[resource] = getattr(quotas, resource, None)
     utils.print_dict(quota_dict)
+
+
+def _quota_usage_show(quotas):
+    quota_list = []
+    for resource in quotas._info.keys():
+        good_name = False
+        for name in _quota_resources:
+            if resource.startswith(name):
+                good_name = True
+        if not good_name:
+            continue
+        quota_info = getattr(quotas, resource, None)
+        quota_info['Type'] = resource
+        quota_info = dict((k.capitalize(), v) for k, v in quota_info.items())
+        quota_list.append(quota_info)
+    utils.print_list(quota_list, _quota_infos)
 
 
 def _quota_update(manager, identifier, args):
@@ -613,6 +679,15 @@ def do_quota_show(cs, args):
     """List the quotas for a tenant."""
 
     _quota_show(cs.quotas.get(args.tenant))
+
+
+@utils.arg('tenant', metavar='<tenant_id>',
+           help='UUID of tenant to list the quota usage for.')
+@utils.service_type('volume')
+def do_quota_usage(cs, args):
+    """List the quota usage for a tenant."""
+
+    _quota_usage_show(cs.quotas.get(args.tenant, usage=True))
 
 
 @utils.arg('tenant', metavar='<tenant_id>',
@@ -812,8 +887,8 @@ def do_backup_delete(cs, args):
 @utils.service_type('volume')
 def do_backup_restore(cs, args):
     """Restore a backup."""
-    if args.volume:
-        volume_id = utils.find_volume(cs, args.volume).id
+    if args.volume_id:
+        volume_id = utils.find_volume(cs, args.volume_id).id
     else:
         volume_id = None
     cs.restores.restore(args.backup, volume_id)
@@ -918,7 +993,9 @@ def do_service_list(cs, args):
 @utils.service_type('volume')
 def do_service_enable(cs, args):
     """Enable the service."""
-    cs.services.enable(args.host, args.binary)
+    result = cs.services.enable(args.host, args.binary)
+    columns = ["Host", "Binary", "Status"]
+    utils.print_list([result], columns)
 
 
 @utils.arg('host', metavar='<hostname>', help='Name of host.')
@@ -926,7 +1003,9 @@ def do_service_enable(cs, args):
 @utils.service_type('volume')
 def do_service_disable(cs, args):
     """Disable the service."""
-    cs.services.disable(args.host, args.binary)
+    result = cs.services.disable(args.host, args.binary)
+    columns = ["Host", "Binary", "Status"]
+    utils.print_list([result], columns)
 
 
 def _treeizeAvailabilityZone(zone):
@@ -1072,6 +1151,17 @@ def do_encryption_type_create(cs, args):
     _print_volume_encryption_type_list([result])
 
 
+@utils.arg('volume_type',
+           metavar='<volume_type>',
+           type=str,
+           help="Name or ID of the volume type")
+@utils.service_type('volume')
+def do_encryption_type_delete(cs, args):
+    """Delete the encryption type for a volume type (Admin Only)."""
+    volume_type = _find_volume_type(cs, args.volume_type)
+    cs.volume_encryption_types.delete(volume_type)
+
+
 @utils.arg('volume', metavar='<volume>', help='ID of the volume to migrate')
 @utils.arg('host', metavar='<host>', help='Destination host')
 @utils.arg('--force-host-copy', metavar='<True|False>',
@@ -1198,7 +1288,7 @@ def do_qos_key(cs, args):
     if args.action == 'set':
         cs.qos_specs.set_keys(args.qos_specs, keypair)
     elif args.action == 'unset':
-        cs.qos_specs.unset_keys(args.qos_specs, list(keypair.keys()))
+        cs.qos_specs.unset_keys(args.qos_specs, list(keypair))
 
 
 @utils.arg('qos_specs', metavar='<qos_specs>',
@@ -1208,3 +1298,94 @@ def do_qos_get_association(cs, args):
     """Get all associations of specific qos specs."""
     associations = cs.qos_specs.get_associations(args.qos_specs)
     _print_associations_list(associations)
+
+
+@utils.arg('snapshot',
+           metavar='<snapshot>',
+           help='ID of the snapshot to update metadata on.')
+@utils.arg('action',
+           metavar='<action>',
+           choices=['set', 'unset'],
+           help="Actions: 'set' or 'unset'")
+@utils.arg('metadata',
+           metavar='<key=value>',
+           nargs='+',
+           default=[],
+           help='Metadata to set/unset (only key is necessary on unset)')
+@utils.service_type('volume')
+def do_snapshot_metadata(cs, args):
+    """Set or Delete metadata of a snapshot."""
+    snapshot = _find_volume_snapshot(cs, args.snapshot)
+    metadata = _extract_metadata(args)
+
+    if args.action == 'set':
+        metadata = snapshot.set_metadata(metadata)
+        utils.print_dict(metadata._info)
+    elif args.action == 'unset':
+        snapshot.delete_metadata(list(metadata.keys()))
+
+
+@utils.arg('snapshot', metavar='<snapshot>',
+           help='ID of snapshot')
+@utils.service_type('volume')
+def do_snapshot_metadata_show(cs, args):
+    """Show metadata of given snapshot."""
+    snapshot = _find_volume_snapshot(cs, args.snapshot)
+    utils.print_dict(snapshot._info['metadata'], 'Metadata-property')
+
+
+@utils.arg('volume', metavar='<volume>',
+           help='ID of volume')
+@utils.service_type('volume')
+def do_metadata_show(cs, args):
+    """Show metadata of given volume."""
+    volume = utils.find_volume(cs, args.volume)
+    utils.print_dict(volume._info['metadata'], 'Metadata-property')
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='ID of the volume to update metadata on.')
+@utils.arg('metadata',
+           metavar='<key=value>',
+           nargs='+',
+           default=[],
+           help='Metadata entry/entries to update.')
+@utils.service_type('volume')
+def do_metadata_update_all(cs, args):
+    """Update all metadata of a volume."""
+    volume = utils.find_volume(cs, args.volume)
+    metadata = _extract_metadata(args)
+    metadata = volume.update_all_metadata(metadata)
+    utils.print_dict(metadata)
+
+
+@utils.arg('snapshot',
+           metavar='<snapshot>',
+           help='ID of the snapshot to update metadata on.')
+@utils.arg('metadata',
+           metavar='<key=value>',
+           nargs='+',
+           default=[],
+           help='Metadata entry/entries to update.')
+@utils.service_type('volume')
+def do_snapshot_metadata_update_all(cs, args):
+    """Update all metadata of a snapshot."""
+    snapshot = _find_volume_snapshot(cs, args.snapshot)
+    metadata = _extract_metadata(args)
+    metadata = snapshot.update_all_metadata(metadata)
+    utils.print_dict(metadata)
+
+
+@utils.arg('volume', metavar='<volume>', help='ID of the volume to update.')
+@utils.arg('read_only',
+           metavar='<True|true|False|false>',
+           choices=['True', 'true', 'False', 'false'],
+           help='Flag to indicate whether to update volume to '
+           'read-only access mode.')
+@utils.service_type('volume')
+def do_readonly_mode_update(cs, args):
+    """Update volume read-only access mode read_only."""
+    volume = utils.find_volume(cs, args.volume)
+    cs.volumes.update_readonly_flag(volume,
+                                    strutils.bool_from_string(args.read_only))

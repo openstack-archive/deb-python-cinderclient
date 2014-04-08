@@ -22,7 +22,6 @@ OpenStack Client interface. Handles the REST calls and responses.
 from __future__ import print_function
 
 import logging
-import os
 
 try:
     import urlparse
@@ -296,10 +295,7 @@ class HTTPClient(object):
         auth_url = self.auth_url
         if self.version == "v2.0":
             while auth_url:
-                if "CINDER_RAX_AUTH" in os.environ:
-                    auth_url = self._rax_auth(auth_url)
-                else:
-                    auth_url = self._v2_auth(auth_url)
+                auth_url = self._v2_auth(auth_url)
 
             # Are we acting on behalf of another user via an
             # existing token? If so, our actual endpoints may
@@ -358,16 +354,6 @@ class HTTPClient(object):
 
         self._authenticate(url, body)
 
-    def _rax_auth(self, url):
-        """Authenticate against the Rackspace auth service."""
-        body = {"auth": {
-                "RAX-KSKEY:apiKeyCredentials": {
-                    "username": self.user,
-                    "apiKey": self.password,
-                    "tenantName": self.projectid}}}
-
-        self._authenticate(url, body)
-
     def _authenticate(self, url, body):
         """Authenticate and extract the service catalog."""
         token_url = url + "/tokens"
@@ -384,13 +370,14 @@ class HTTPClient(object):
     def get_volume_api_version_from_endpoint(self):
         magic_tuple = urlparse.urlsplit(self.management_url)
         scheme, netloc, path, query, frag = magic_tuple
-        v = path.split("/")[1]
+        components = path.split("/")
         valid_versions = ['v1', 'v2']
-        if v not in valid_versions:
-            msg = "Invalid client version '%s'. must be one of: %s" % (
-                  (v, ', '.join(valid_versions)))
-            raise exceptions.UnsupportedVersion(msg)
-        return v[1:]
+        for version in valid_versions:
+            if version in components:
+                return version[1:]
+        msg = "Invalid client version '%s'. must be one of: %s" % (
+            (version, ', '.join(valid_versions)))
+        raise exceptions.UnsupportedVersion(msg)
 
 
 def get_client_class(version):
@@ -402,7 +389,7 @@ def get_client_class(version):
         client_path = version_map[str(version)]
     except (KeyError, ValueError):
         msg = "Invalid client version '%s'. must be one of: %s" % (
-            (version, ', '.join(list(version_map.keys()))))
+            (version, ', '.join(version_map)))
         raise exceptions.UnsupportedVersion(msg)
 
     return utils.import_class(client_path)

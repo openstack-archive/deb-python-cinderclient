@@ -36,7 +36,7 @@ class VolumeEncryptionTypeManager(base.ManagerWithFind):
     """
     resource_class = VolumeEncryptionType
 
-    def list(self):
+    def list(self, search_opts=None):
         """
         List all volume encryption types.
 
@@ -93,4 +93,5 @@ class VolumeEncryptionTypeManager(base.ManagerWithFind):
         :param volume_type: the volume type whose encryption type information
                             must be deleted
         """
-        raise NotImplementedError()
+        return self._delete("/types/%s/encryption/provider" %
+                            base.getid(volume_type))

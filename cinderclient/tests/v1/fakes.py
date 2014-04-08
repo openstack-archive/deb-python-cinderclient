@@ -35,8 +35,6 @@ def _stub_volume(**kwargs):
         "bootable": "false",
         "availability_zone": "cinder",
         "created_at": "2012-08-27T00:00:00.000000",
-        "display_description": None,
-        "display_name": None,
         "id": '00000000-0000-0000-0000-000000000000',
         "metadata": {},
         "size": 1,
@@ -260,6 +258,9 @@ class FakeHTTPClient(base_client.HTTPClient):
     def get_snapshots_1234(self, **kw):
         return (200, {}, {'snapshot': _stub_snapshot(id='1234')})
 
+    def get_snapshots_5678(self, **kw):
+        return (200, {}, {'snapshot': _stub_snapshot(id='5678')})
+
     def put_snapshots_1234(self, **kw):
         snapshot = _stub_snapshot(id='1234')
         snapshot.update(kw['body']['snapshot'])
@@ -268,8 +269,8 @@ class FakeHTTPClient(base_client.HTTPClient):
     def post_snapshots_1234_action(self, body, **kw):
         _body = None
         resp = 202
-        assert len(body.keys()) == 1
-        action = body.keys()[0]
+        assert len(list(body)) == 1
+        action = list(body)[0]
         if action == 'os-reset_status':
             assert 'status' in body['os-reset_status']
         elif action == 'os-update_snapshot_status':
@@ -277,6 +278,12 @@ class FakeHTTPClient(base_client.HTTPClient):
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
+
+    def post_snapshots_5678_action(self, body, **kw):
+        return self.post_snapshots_1234_action(body, **kw)
+
+    def delete_snapshots_1234(self, **kw):
+        return (202, {}, {})
 
     #
     # Volumes
@@ -297,13 +304,17 @@ class FakeHTTPClient(base_client.HTTPClient):
     # at the very least it's not complete
     def get_volumes_detail(self, **kw):
         return (200, {}, {"volumes": [
-            {'id': 1234,
+            {'id': kw.get('id', 1234),
              'name': 'sample-volume',
              'attachments': [{'server_id': 1234}]},
         ]})
 
     def get_volumes_1234(self, **kw):
-        r = {'volume': self.get_volumes_detail()[2]['volumes'][0]}
+        r = {'volume': self.get_volumes_detail(id=1234)[2]['volumes'][0]}
+        return (200, {}, r)
+
+    def get_volumes_5678(self, **kw):
+        r = {'volume': self.get_volumes_detail(id=5678)[2]['volumes'][0]}
         return (200, {}, r)
 
     def get_volumes_1234_encryption(self, **kw):
@@ -313,10 +324,12 @@ class FakeHTTPClient(base_client.HTTPClient):
     def post_volumes_1234_action(self, body, **kw):
         _body = None
         resp = 202
-        assert len(list(body.keys())) == 1
-        action = list(body.keys())[0]
+        assert len(list(body)) == 1
+        action = list(body)[0]
         if action == 'os-attach':
-            assert list(body[action].keys()) == ['instance_uuid', 'mountpoint']
+            assert sorted(list(body[action])) == ['instance_uuid',
+                                                  'mode',
+                                                  'mountpoint']
         elif action == 'os-detach':
             assert body[action] is None
         elif action == 'os-reserve':
@@ -324,10 +337,10 @@ class FakeHTTPClient(base_client.HTTPClient):
         elif action == 'os-unreserve':
             assert body[action] is None
         elif action == 'os-initialize_connection':
-            assert list(body[action].keys()) == ['connector']
+            assert list(body[action]) == ['connector']
             return (202, {}, {'connection_info': 'foos'})
         elif action == 'os-terminate_connection':
-            assert list(body[action].keys()) == ['connector']
+            assert list(body[action]) == ['connector']
         elif action == 'os-begin_detaching':
             assert body[action] is None
         elif action == 'os-roll_detaching':
@@ -335,18 +348,26 @@ class FakeHTTPClient(base_client.HTTPClient):
         elif action == 'os-reset_status':
             assert 'status' in body[action]
         elif action == 'os-extend':
-            assert body[action].keys() == ['new_size']
+            assert list(body[action]) == ['new_size']
         elif action == 'os-migrate_volume':
             assert 'host' in body[action]
             assert 'force_host_copy' in body[action]
+        elif action == 'os-update_readonly_flag':
+            assert list(body[action]) == ['readonly']
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
+
+    def post_volumes_5678_action(self, body, **kw):
+        return self.post_volumes_1234_action(body, **kw)
 
     def post_volumes(self, **kw):
         return (202, {}, {'volume': {}})
 
     def delete_volumes_1234(self, **kw):
+        return (202, {}, None)
+
+    def delete_volumes_5678(self, **kw):
         return (202, {}, None)
 
     #
@@ -370,7 +391,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1}})
 
     def put_os_quota_sets_test(self, body, **kw):
-        assert list(body.keys()) == ['quota_set']
+        assert list(body) == ['quota_set']
         fakes.assert_has_keys(body['quota_set'],
                               required=['tenant_id'])
         return (200, {}, {'quota_set': {
@@ -393,7 +414,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1}})
 
     def put_os_quota_class_sets_test(self, body, **kw):
-        assert list(body.keys()) == ['quota_class_set']
+        assert list(body) == ['quota_class_set']
         fakes.assert_has_keys(body['quota_class_set'],
                               required=['class_name'])
         return (200, {}, {'quota_class_set': {
@@ -431,7 +452,7 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'extra_specs': {}}})
 
     def post_types_1_extra_specs(self, body, **kw):
-        assert list(body.keys()) == ['extra_specs']
+        assert list(body) == ['extra_specs']
         return (200, {}, {'extra_specs': {'k': 'v'}})
 
     def delete_types_1_extra_specs_k(self, **kw):
@@ -456,6 +477,9 @@ class FakeHTTPClient(base_client.HTTPClient):
 
     def put_types_1_encryption_1(self, body, **kw):
         return (200, {}, {})
+
+    def delete_types_1_encryption_provider(self, **kw):
+        return (202, {}, None)
 
     #
     # Set/Unset metadata
@@ -530,6 +554,10 @@ class FakeHTTPClient(base_client.HTTPClient):
                 {'backup': _stub_backup(backup1, base_uri, tenant_id)})
 
     def post_backups_76a17945_3c6f_435c_975b_b5685db10b62_restore(self, **kw):
+        return (200, {},
+                {'restore': _stub_restore()})
+
+    def post_backups_1234_restore(self, **kw):
         return (200, {},
                 {'restore': _stub_restore()})
 
@@ -674,11 +702,11 @@ class FakeHTTPClient(base_client.HTTPClient):
 
     def put_os_services_enable(self, body, **kw):
         return (200, {}, {'host': body['host'], 'binary': body['binary'],
-                'status': 'disabled'})
+                'status': 'enabled'})
 
     def put_os_services_disable(self, body, **kw):
         return (200, {}, {'host': body['host'], 'binary': body['binary'],
-                'status': 'enabled'})
+                'status': 'disabled'})
 
     def get_os_availability_zone(self, **kw):
         return (200, {}, {
@@ -734,3 +762,18 @@ class FakeHTTPClient(base_client.HTTPClient):
                 },
                 ]
         })
+
+    def post_snapshots_1234_metadata(self, **kw):
+        return (200, {}, {"metadata": {"key1": "val1", "key2": "val2"}})
+
+    def delete_snapshots_1234_metadata_key1(self, **kw):
+        return (200, {}, None)
+
+    def delete_snapshots_1234_metadata_key2(self, **kw):
+        return (200, {}, None)
+
+    def put_volumes_1234_metadata(self, **kw):
+        return (200, {}, {"metadata": {"key1": "val1", "key2": "val2"}})
+
+    def put_snapshots_1234_metadata(self, **kw):
+        return (200, {}, {"metadata": {"key1": "val1", "key2": "val2"}})

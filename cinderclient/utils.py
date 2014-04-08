@@ -56,7 +56,7 @@ def add_arg(f, *args, **kwargs):
     # NOTE(sirp): avoid dups that can occur when the module is shared across
     # tests.
     if (args, kwargs) not in f.arguments:
-        # Because of the sematics of decorator composition if we just append
+        # Because of the semantics of decorator composition if we just append
         # to the options list positional options will appear to be backwards.
         f.arguments.insert(0, (args, kwargs))
 
@@ -168,7 +168,10 @@ def print_list(objs, fields, formatters={}, order_by=None):
                     field_name = field.replace(' ', '_')
                 else:
                     field_name = field.lower().replace(' ', '_')
-                data = getattr(o, field_name, '')
+                if type(o) == dict and field in o:
+                    data = o[field]
+                else:
+                    data = getattr(o, field_name, '')
                 row.append(data)
         pt.add_row(row)
 

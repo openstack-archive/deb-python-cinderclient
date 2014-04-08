@@ -29,6 +29,42 @@ See also :doc:`/man/cinder`.
 
 Release Notes
 =============
+
+1.0.8
+-----
+* Add support for reset-state on multiple volumes or snapshots at once
+* Add volume retype command
+
+.. _966329: https://bugs.launchpad.net/python-cinderclient/+bug/966329
+.. _1256043: https://bugs.launchpad.net/python-cinderclient/+bug/1256043
+.. _1254951: http://bugs.launchpad.net/python-cinderclient/+bug/1254951
+.. _1254587: http://bugs.launchpad.net/python-cinderclient/+bug/1254587
+.. _1253142: http://bugs.launchpad.net/python-cinderclient/+bug/1253142
+.. _1252665: http://bugs.launchpad.net/python-cinderclient/+bug/1252665
+.. _1255876: http://bugs.launchpad.net/python-cinderclient/+bug/1255876
+.. _1251385: http://bugs.launchpad.net/python-cinderclient/+bug/1251385
+.. _1264415: http://bugs.launchpad.net/python-cinderclient/+bug/1264415
+.. _1258489: http://bugs.launchpad.net/python-cinderclient/+bug/1258489
+.. _1248519: http://bugs.launchpad.net/python-cinderclient/+bug/1248519
+.. _1257747: http://bugs.launchpad.net/python-cinderclient/+bug/1257747
+
+1.0.7
+-----
+* Add support for read-only volumes
+* Add support for setting snapshot metadata
+* Deprecate volume-id arg to backup restore in favor of --volume
+* Add quota-usage command
+* Fix exception deprecation warning message
+* Report error when no args supplied to rename cmd
+
+.. _1241941: http://bugs.launchpad.net/python-cinderclient/+bug/1241941
+.. _1242816: http://bugs.launchpad.net/python-cinderclient/+bug/1242816
+.. _1233311: http://bugs.launchpad.net/python-cinderclient/+bug/1233311
+.. _1227307: http://bugs.launchpad.net/python-cinderclient/+bug/1227307
+.. _1240151: http://bugs.launchpad.net/python-cinderclient/+bug/1240151
+.. _1241682: http://bugs.launchpad.net/python-cinderclient/+bug/1241682
+
+
 1.0.6
 -----
 * Add support for multiple endpoints
@@ -38,6 +74,7 @@ Release Notes
 * Add update action for snapshot metadata
 * Add encryption metadata support
 * Add volume migrate support
+* Add support for QoS specs
 
 .. _1221104: http://bugs.launchpad.net/python-cinderclient/+bug/1221104
 .. _1220590: http://bugs.launchpad.net/python-cinderclient/+bug/1220590

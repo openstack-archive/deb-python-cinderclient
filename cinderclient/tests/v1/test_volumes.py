@@ -35,7 +35,7 @@ class VolumesTest(utils.TestCase):
 
     def test_attach(self):
         v = cs.volumes.get('1234')
-        cs.volumes.attach(v, 1, '/dev/vdc')
+        cs.volumes.attach(v, 1, '/dev/vdc', mode='rw')
         cs.assert_called('POST', '/volumes/1234/action')
 
     def test_detach(self):
@@ -95,4 +95,14 @@ class VolumesTest(utils.TestCase):
     def test_migrate(self):
         v = cs.volumes.get('1234')
         cs.volumes.migrate_volume(v, 'dest', False)
+        cs.assert_called('POST', '/volumes/1234/action')
+
+    def test_metadata_update_all(self):
+        cs.volumes.update_all_metadata(1234, {'k1': 'v1'})
+        cs.assert_called('PUT', '/volumes/1234/metadata',
+                         {'metadata': {'k1': 'v1'}})
+
+    def test_readonly_mode_update(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.update_readonly_flag(v, True)
         cs.assert_called('POST', '/volumes/1234/action')

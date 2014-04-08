@@ -110,7 +110,7 @@ class Manager(utils.HookableMixin):
         try:
             os.makedirs(cache_dir, 0o755)
         except OSError:
-            # NOTE(kiall): This is typicaly either permission denied while
+            # NOTE(kiall): This is typically either permission denied while
             #              attempting to create the directory, or the directory
             #              already exists. Either way, don't fail.
             pass
@@ -124,7 +124,7 @@ class Manager(utils.HookableMixin):
         try:
             setattr(self, cache_attr, open(path, mode))
         except IOError:
-            # NOTE(kiall): This is typicaly a permission denied while
+            # NOTE(kiall): This is typically a permission denied while
             #              attempting to write the cache file.
             pass
 
@@ -203,7 +203,10 @@ class ManagerWithFind(six.with_metaclass(abc.ABCMeta, Manager)):
         found = []
         searches = list(kwargs.items())
 
-        for obj in self.list():
+        # Want to search for all tenants here so that when attempting to delete
+        # that a user like admin doesn't get a failure when trying to delete
+        # another tenant's volume by name.
+        for obj in self.list(search_opts={'all_tenants': 1}):
             try:
                 if all(getattr(obj, attr) == value
                        for (attr, value) in searches):
@@ -270,7 +273,7 @@ class Resource(object):
             return self.__dict__[k]
 
     def __repr__(self):
-        reprkeys = sorted(k for k in list(self.__dict__.keys()) if k[0] != '_'
+        reprkeys = sorted(k for k in self.__dict__ if k[0] != '_'
                           and k != 'manager')
         info = ", ".join("%s=%s" % (k, getattr(self, k)) for k in reprkeys)
         return "<%s %s>" % (self.__class__.__name__, info)

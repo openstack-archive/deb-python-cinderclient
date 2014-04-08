@@ -1,24 +1,15 @@
 Cinder Client Style Commandments
-=========================
+================================
 
 - Step 1: Read the OpenStack Style Commandments
-  https://github.com/openstack-dev/hacking/blob/master/HACKING.rst
+  http://docs.openstack.org/developer/hacking/
 - Step 2: Read on
 
 Cinder Client Specific Commandments
-----------------------------
+-----------------------------------
 
 General
 -------
-- Do not use locals(). Example::
-
-    LOG.debug(_("volume %(vol_name)s: creating size %(vol_size)sG") %
-              locals()) # BAD
-
-    LOG.debug(_("volume %(vol_name)s: creating size %(vol_size)sG") %
-              {'vol_name': vol_name,
-               'vol_size': vol_size}) # OKAY
-
 - Use 'raise' instead of 'raise e' to preserve original traceback or exception being reraised::
 
     except Exception as e:
@@ -30,7 +21,7 @@ General
         raise  # OKAY
 
 Text encoding
-----------
+-------------
 - All text within python code should be of type 'unicode'.
 
     WRONG:
@@ -68,3 +59,19 @@ Text encoding
     returntext = do_some_magic_with(mytext)
     returnstring = returntext.encode('utf-8')
     outfile.write(returnstring)
+
+Release Notes
+-------------
+- Each patch should add an entry in the doc/source/index.rst file under
+  "MASTER".
+
+- On each new release, the entries under "MASTER" will become the release notes
+  for that release, and "MASTER" will be cleared.
+
+- The format should match existing release notes.  For example, a feature::
+
+    * Add support for function foo
+
+  Or a bug fix::
+
+    .. _1241941: http://bugs.launchpad.net/python-cinderclient/+bug/1241941
