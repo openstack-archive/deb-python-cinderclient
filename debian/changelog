@@ -3,6 +3,7 @@ python-cinderclient (1:1.0.8-1) experimental; urgency=low
   * New upstream release.
   * Standards-Version: is now 3.9.5.
   * New (build-)depends for this release.
+  * Disabled useless dh targets.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 09 Apr 2014 00:46:18 +0800
 
