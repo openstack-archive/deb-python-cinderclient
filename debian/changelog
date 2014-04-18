@@ -1,3 +1,9 @@
+python-cinderclient (1:1.0.8-2) unstable; urgency=medium
+
+  * Uploading to unstable.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 06:36:30 +0000
+
 python-cinderclient (1:1.0.8-1) experimental; urgency=low
 
   * New upstream release.
