@@ -2,31 +2,31 @@ Source: python-cinderclient
 Section: python
 Priority: optional
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
-Uploaders: Julien Danjou <acid@debian.org>,
-           Thomas Goirand <zigo@debian.org>,
-           Ghe Rivero <ghe.rivero@stackops.com>,
-           Mehdi Abaakouk <sileht@sileht.net>
+Uploaders: Thomas Goirand <zigo@debian.org>
 Build-Depends: debhelper (>= 9),
                openstack-pkg-tools,
                python-all (>= 2.6.6-3~),
-               python-pbr (>= 0.5.21),
-               python-setuptools
+               python-pbr (>= 0.6),
+               python-setuptools,
+               python-sphinx,
 Build-Depends-Indep: python-babel (>= 1.3),
                      python-fixtures (>= 0.3.14),
                      python-hacking (>= 0.8.0),
                      python-httplib2,
+                     python-keystoneclient (>= 1:0.10.0),
                      python-mock (>= 1.0),
                      python-nose,
+                     python-oslosphinx (>= 2.2.0),
                      python-prettytable (>= 0.7),
-                     python-requests (>= 1.1),
-                     python-simplejson (>= 2.0.9),
-                     python-six (>= 1.4.1),
-                     python-sphinx,
+                     python-requests (>= 1.2.1),
+                     python-requests-mock,
+                     python-simplejson (>= 2.2.0),
+                     python-six (>= 1.7.0),
                      python-subunit,
-                     python-testtools (>= 0.9.32),
+                     python-testtools (>= 0.9.34),
                      python-unittest2,
-                     subunit,
-                     testrepository (>= 0.0.17)
+                     subunit (>= 0.0.18),
+                     testrepository (>= 0.0.18)
 Standards-Version: 3.9.5
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
@@ -37,11 +37,12 @@ Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: python-babel (>= 1.3),
          python-httplib2,
-         python-pbr (>= 0.5.21),
+         python-keystoneclient (>= 1:0.10.0),
+         python-pbr (>= 0.6),
          python-prettytable (>= 0.7),
-         python-requests (>= 1.1),
-         python-simplejson (>= 2.0.9),
-         python-six (>= 1.4.1),
+         python-requests (>= 1.2.1),
+         python-simplejson (>= 2.2.0),
+         python-six (>= 1.7.0),
          ${misc:Depends},
          ${python:Depends}
 Provides: ${python:Provides}
