@@ -1,16 +1,33 @@
+# Copyright (c) 2011 OpenStack Foundation
 # Copyright 2010 Jacob Kaplan-Moss
-# Copyright 2011 OpenStack LLC.
 # Copyright 2011 Piston Cloud Computing, Inc.
-
 # All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 """
 OpenStack Client interface. Handles the REST calls and responses.
 """
 
+from __future__ import print_function
+
 import logging
-import os
-import sys
-import urlparse
+
+try:
+    import urlparse
+except ImportError:
+    import urllib.parse as urlparse
+
 try:
     from eventlet import sleep
 except ImportError:
@@ -61,6 +78,7 @@ class HTTPClient(object):
         self.auth_token = None
         self.proxy_token = proxy_token
         self.proxy_tenant_id = proxy_tenant_id
+        self.timeout = timeout
 
         if insecure:
             self.verify_cert = False
@@ -71,7 +89,7 @@ class HTTPClient(object):
                 self.verify_cert = True
 
         self._logger = logging.getLogger(__name__)
-        if self.http_log_debug:
+        if self.http_log_debug and not self._logger.handlers:
             ch = logging.StreamHandler()
             self._logger.setLevel(logging.DEBUG)
             self._logger.addHandler(ch)
@@ -115,6 +133,8 @@ class HTTPClient(object):
             kwargs['data'] = json.dumps(kwargs['body'])
             del kwargs['body']
 
+        if self.timeout:
+            kwargs.setdefault('timeout', self.timeout)
         self.http_log_req((url, method,), kwargs)
         resp = requests.request(
             method,
@@ -174,7 +194,8 @@ class HTTPClient(object):
             except requests.exceptions.ConnectionError as e:
                 # Catch a connection refused from requests.request
                 self._logger.debug("Connection refused: %s" % e)
-                raise
+                msg = 'Unable to establish connection: %s' % e
+                raise exceptions.ConnectionError(msg)
             self._logger.debug(
                 "Failed attempt(%s of %s), retrying in %s seconds" %
                 (attempts, self.retries, backoff))
@@ -196,7 +217,8 @@ class HTTPClient(object):
     def _extract_service_catalog(self, url, resp, body, extract_token=True):
         """See what the auth service told us and process the response.
         We may get redirected to another site, fail or actually get
-        back a service catalog with a token and our endpoints."""
+        back a service catalog with a token and our endpoints.
+        """
 
         if resp.status_code == 200:  # content must always present
             try:
@@ -217,13 +239,13 @@ class HTTPClient(object):
                 self.management_url = management_url.rstrip('/')
                 return None
             except exceptions.AmbiguousEndpoints:
-                print "Found more than one valid endpoint. Use a more " \
-                      "restrictive filter"
+                print("Found more than one valid endpoint. Use a more "
+                      "restrictive filter")
                 raise
             except KeyError:
                 raise exceptions.AuthorizationFailure()
             except exceptions.EndpointNotFound:
-                print "Could not find any suitable endpoint. Correct region?"
+                print("Could not find any suitable endpoint. Correct region?")
                 raise
 
         elif resp.status_code == 305:
@@ -248,7 +270,7 @@ class HTTPClient(object):
                         % (self.proxy_token, self.proxy_tenant_id)])
         self._logger.debug("Using Endpoint URL: %s" % url)
         resp, body = self.request(url, "GET",
-                                  headers={'X-Auth_Token': self.auth_token})
+                                  headers={'X-Auth-Token': self.auth_token})
         return self._extract_service_catalog(url, resp, body,
                                              extract_token=False)
 
@@ -273,10 +295,7 @@ class HTTPClient(object):
         auth_url = self.auth_url
         if self.version == "v2.0":
             while auth_url:
-                if "CINDER_RAX_AUTH" in os.environ:
-                    auth_url = self._rax_auth(auth_url)
-                else:
-                    auth_url = self._v2_auth(auth_url)
+                auth_url = self._v2_auth(auth_url)
 
             # Are we acting on behalf of another user via an
             # existing token? If so, our actual endpoints may
@@ -335,16 +354,6 @@ class HTTPClient(object):
 
         self._authenticate(url, body)
 
-    def _rax_auth(self, url):
-        """Authenticate against the Rackspace auth service."""
-        body = {"auth": {
-                "RAX-KSKEY:apiKeyCredentials": {
-                    "username": self.user,
-                    "apiKey": self.password,
-                    "tenantName": self.projectid}}}
-
-        self._authenticate(url, body)
-
     def _authenticate(self, url, body):
         """Authenticate and extract the service catalog."""
         token_url = url + "/tokens"
@@ -358,6 +367,18 @@ class HTTPClient(object):
 
         return self._extract_service_catalog(url, resp, body)
 
+    def get_volume_api_version_from_endpoint(self):
+        magic_tuple = urlparse.urlsplit(self.management_url)
+        scheme, netloc, path, query, frag = magic_tuple
+        components = path.split("/")
+        valid_versions = ['v1', 'v2']
+        for version in valid_versions:
+            if version in components:
+                return version[1:]
+        msg = "Invalid client version '%s'. must be one of: %s" % (
+            (version, ', '.join(valid_versions)))
+        raise exceptions.UnsupportedVersion(msg)
+
 
 def get_client_class(version):
     version_map = {
@@ -368,7 +389,7 @@ def get_client_class(version):
         client_path = version_map[str(version)]
     except (KeyError, ValueError):
         msg = "Invalid client version '%s'. must be one of: %s" % (
-            (version, ', '.join(version_map.keys())))
+            (version, ', '.join(version_map)))
         raise exceptions.UnsupportedVersion(msg)
 
     return utils.import_class(client_path)

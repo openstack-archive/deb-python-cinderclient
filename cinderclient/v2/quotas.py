@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC.
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -20,32 +20,27 @@ class QuotaSet(base.Resource):
 
     @property
     def id(self):
-        """Needed by base.Resource to self-refresh and be indexed"""
+        """Needed by base.Resource to self-refresh and be indexed."""
         return self.tenant_id
 
     def update(self, *args, **kwargs):
         self.manager.update(self.tenant_id, *args, **kwargs)
 
 
-class QuotaSetManager(base.ManagerWithFind):
+class QuotaSetManager(base.Manager):
     resource_class = QuotaSet
 
-    def get(self, tenant_id):
+    def get(self, tenant_id, usage=False):
         if hasattr(tenant_id, 'tenant_id'):
             tenant_id = tenant_id.tenant_id
-        return self._get("/os-quota-sets/%s" % (tenant_id), "quota_set")
+        return self._get("/os-quota-sets/%s?usage=%s" % (tenant_id, usage),
+                         "quota_set")
 
-    def update(self, tenant_id, volumes=None, snapshots=None, gigabytes=None):
+    def update(self, tenant_id, **updates):
+        body = {'quota_set': {'tenant_id': tenant_id}}
 
-        body = {'quota_set': {
-                'tenant_id': tenant_id,
-                'volumes': volumes,
-                'snapshots': snapshots,
-                'gigabytes': gigabytes}}
-
-        for key in body['quota_set'].keys():
-            if body['quota_set'][key] is None:
-                body['quota_set'].pop(key)
+        for update in updates:
+            body['quota_set'][update] = updates[update]
 
         self._update('/os-quota-sets/%s' % (tenant_id), body)
 

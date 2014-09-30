@@ -18,6 +18,8 @@
 Command-line interface to the OpenStack Cinder API.
 """
 
+from __future__ import print_function
+
 import argparse
 import glob
 import imp
@@ -37,8 +39,9 @@ from cinderclient.v2 import shell as shell_v2
 
 DEFAULT_OS_VOLUME_API_VERSION = "1"
 DEFAULT_CINDER_ENDPOINT_TYPE = 'publicURL'
-DEFAULT_CINDER_SERVICE_TYPE = 'compute'
+DEFAULT_CINDER_SERVICE_TYPE = 'volume'
 
+logging.basicConfig()
 logger = logging.getLogger(__name__)
 
 
@@ -115,6 +118,14 @@ class OpenStackCinderShell(object):
         parser.add_argument('--os_tenant_name',
                             help=argparse.SUPPRESS)
 
+        parser.add_argument('--os-tenant-id',
+                            metavar='<auth-tenant-id>',
+                            default=utils.env('OS_TENANT_ID',
+                                              'CINDER_TENANT_ID'),
+                            help='Defaults to env[OS_TENANT_ID].')
+        parser.add_argument('--os_tenant_id',
+                            help=argparse.SUPPRESS)
+
         parser.add_argument('--os-auth-url',
                             metavar='<auth-url>',
                             default=utils.env('OS_AUTH_URL',
@@ -133,7 +144,7 @@ class OpenStackCinderShell(object):
 
         parser.add_argument('--service-type',
                             metavar='<service-type>',
-                            help='Defaults to compute for most actions')
+                            help='Defaults to volume for most actions')
         parser.add_argument('--service_type',
                             help=argparse.SUPPRESS)
 
@@ -161,9 +172,9 @@ class OpenStackCinderShell(object):
                             help=argparse.SUPPRESS)
 
         parser.add_argument('--os-volume-api-version',
-                            metavar='<compute-api-ver>',
+                            metavar='<volume-api-ver>',
                             default=utils.env('OS_VOLUME_API_VERSION',
-                            default=DEFAULT_OS_VOLUME_API_VERSION),
+                            default=None),
                             help='Accepts 1 or 2,defaults '
                                  'to env[OS_VOLUME_API_VERSION].')
         parser.add_argument('--os_volume_api_version',
@@ -287,7 +298,7 @@ class OpenStackCinderShell(object):
 
     def _find_actions(self, subparsers, actions_module):
         for attr in (a for a in dir(actions_module) if a.startswith('do_')):
-            # I prefer to be hypen-separated instead of underscores.
+            # I prefer to be hyphen-separated instead of underscores.
             command = attr[3:].replace('_', '-')
             callback = getattr(actions_module, attr)
             desc = callback.__doc__ or ''
@@ -317,7 +328,7 @@ class OpenStackCinderShell(object):
         streamhandler = logging.StreamHandler()
         streamformat = "%(levelname)s (%(module)s:%(lineno)d) %(message)s"
         streamhandler.setFormatter(logging.Formatter(streamformat))
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.WARNING)
         logger.addHandler(streamhandler)
 
     def main(self, argv):
@@ -325,6 +336,14 @@ class OpenStackCinderShell(object):
         parser = self.get_base_parser()
         (options, args) = parser.parse_known_args(argv)
         self.setup_debugging(options.debug)
+        api_version_input = True
+
+        if not options.os_volume_api_version:
+            # Environment variable OS_VOLUME_API_VERSION was
+            # not set and '--os-volume-api-version' option doesn't
+            # specify a value.  Fall back to default.
+            options.os_volume_api_version = DEFAULT_OS_VOLUME_API_VERSION
+            api_version_input = False
 
         # build available subcommands based on version
         self.extensions = self._discover_extensions(
@@ -351,13 +370,14 @@ class OpenStackCinderShell(object):
             return 0
 
         (os_username, os_password, os_tenant_name, os_auth_url,
-         os_region_name, endpoint_type, insecure,
+         os_region_name, os_tenant_id, endpoint_type, insecure,
          service_type, service_name, volume_service_name,
          username, apikey, projectid, url, region_name, cacert) = (
              args.os_username, args.os_password,
              args.os_tenant_name, args.os_auth_url,
-             args.os_region_name, args.endpoint_type,
-             args.insecure, args.service_type, args.service_name,
+             args.os_region_name, args.os_tenant_id,
+             args.endpoint_type, args.insecure,
+             args.service_type, args.service_name,
              args.volume_service_name, args.username,
              args.apikey, args.projectid,
              args.url, args.region_name, args.os_cacert)
@@ -389,11 +409,11 @@ class OpenStackCinderShell(object):
                 else:
                     os_password = apikey
 
-            if not os_tenant_name:
+            if not (os_tenant_name or os_tenant_id):
                 if not projectid:
-                    raise exc.CommandError("You must provide a tenant name "
-                                           "via either --os-tenant-name or "
-                                           "env[OS_TENANT_NAME]")
+                    raise exc.CommandError("You must provide a tenant_id "
+                                           "via either --os-tenant-id or "
+                                           "env[OS_TENANT_ID]")
                 else:
                     os_tenant_name = projectid
 
@@ -408,10 +428,10 @@ class OpenStackCinderShell(object):
             if not os_region_name and region_name:
                 os_region_name = region_name
 
-        if not os_tenant_name:
+        if not (os_tenant_name or os_tenant_id):
             raise exc.CommandError(
-                "You must provide a tenant name "
-                "via either --os-tenant-name or env[OS_TENANT_NAME]")
+                "You must provide a tenant_id "
+                "via either --os-tenant-id or env[OS_TENANT_ID]")
 
         if not os_auth_url:
             raise exc.CommandError(
@@ -421,6 +441,7 @@ class OpenStackCinderShell(object):
         self.cs = client.Client(options.os_volume_api_version, os_username,
                                 os_password, os_tenant_name, os_auth_url,
                                 insecure, region_name=os_region_name,
+                                tenant_id=os_tenant_id,
                                 endpoint_type=endpoint_type,
                                 extensions=self.extensions,
                                 service_type=service_type,
@@ -438,6 +459,34 @@ class OpenStackCinderShell(object):
         except exc.AuthorizationFailure:
             raise exc.CommandError("Unable to authorize user")
 
+        endpoint_api_version = None
+        # Try to get the API version from the endpoint URL.  If that fails fall
+        # back to trying to use what the user specified via
+        # --os-volume-api-version or with the OS_VOLUME_API_VERSION environment
+        # variable.  Fail safe is to use the default API setting.
+        try:
+            endpoint_api_version = \
+                self.cs.get_volume_api_version_from_endpoint()
+            if endpoint_api_version != options.os_volume_api_version:
+                msg = (("Volume API version is set to %s "
+                        "but you are accessing a %s endpoint. "
+                        "Change its value via either --os-volume-api-version "
+                        "or env[OS_VOLUME_API_VERSION]")
+                       % (options.os_volume_api_version, endpoint_api_version))
+                raise exc.InvalidAPIVersion(msg)
+        except exc.UnsupportedVersion:
+            endpoint_api_version = options.os_volume_api_version
+            if api_version_input:
+                logger.warning("Unable to determine the API version via "
+                               "endpoint URL.  Falling back to user "
+                               "specified version: %s" %
+                               endpoint_api_version)
+            else:
+                logger.warning("Unable to determine the API version from "
+                               "endpoint URL or user input.  Falling back to "
+                               "default API version: %s" %
+                               endpoint_api_version)
+
         args.func(self.cs, args)
 
     def _run_extension_hooks(self, hook_type, *args, **kwargs):
@@ -446,20 +495,21 @@ class OpenStackCinderShell(object):
             extension.run_hooks(hook_type, *args, **kwargs)
 
     def do_bash_completion(self, args):
-        """
+        """Print arguments for bash_completion.
+
         Prints all of the commands and options to stdout so that the
         cinder.bash_completion script doesn't have to hard code them.
         """
         commands = set()
         options = set()
-        for sc_str, sc in self.subcommands.items():
+        for sc_str, sc in list(self.subcommands.items()):
             commands.add(sc_str)
-            for option in sc._optionals._option_string_actions.keys():
+            for option in sc._optionals._option_string_actions:
                 options.add(option)
 
         commands.remove('bash-completion')
         commands.remove('bash_completion')
-        print ' '.join(commands | options)
+        print(' '.join(commands | options))
 
     @utils.arg('command', metavar='<subcommand>', nargs='?',
                help='Display help for <subcommand>')
@@ -487,16 +537,17 @@ class OpenStackHelpFormatter(argparse.HelpFormatter):
 
 def main():
     try:
-        OpenStackCinderShell().main(map(strutils.safe_decode, sys.argv[1:]))
+        if sys.version_info >= (3, 0):
+            OpenStackCinderShell().main(sys.argv[1:])
+        else:
+            OpenStackCinderShell().main(map(strutils.safe_decode,
+                                        sys.argv[1:]))
     except KeyboardInterrupt:
-        print >> sys.stderr, "... terminating cinder client"
+        print("... terminating cinder client", file=sys.stderr)
         sys.exit(130)
-    except Exception, e:
+    except Exception as e:
         logger.debug(e, exc_info=1)
-        message = e.message
-        if not isinstance(message, basestring):
-            message = str(message)
-        print >> sys.stderr, "ERROR: %s" % strutils.safe_encode(message)
+        print("ERROR: %s" % strutils.six.text_type(e), file=sys.stderr)
         sys.exit(1)
 
 

@@ -1,4 +1,0 @@
-argparse
-prettytable
-requests>=0.8
-simplejson

@@ -24,11 +24,102 @@ In order to use the CLI, you must provide your OpenStack username, password, ten
 
 Once you've configured your authentication parameters, you can run ``cinder help`` to see a complete listing of available commands.
 
+See also :doc:`/man/cinder`.
+
 
 Release Notes
 =============
 
-1.1.0
+1.0.8
+-----
+* Add support for reset-state on multiple volumes or snapshots at once
+* Add volume retype command
+
+.. _966329: https://bugs.launchpad.net/python-cinderclient/+bug/966329
+.. _1256043: https://bugs.launchpad.net/python-cinderclient/+bug/1256043
+.. _1254951: http://bugs.launchpad.net/python-cinderclient/+bug/1254951
+.. _1254587: http://bugs.launchpad.net/python-cinderclient/+bug/1254587
+.. _1253142: http://bugs.launchpad.net/python-cinderclient/+bug/1253142
+.. _1252665: http://bugs.launchpad.net/python-cinderclient/+bug/1252665
+.. _1255876: http://bugs.launchpad.net/python-cinderclient/+bug/1255876
+.. _1251385: http://bugs.launchpad.net/python-cinderclient/+bug/1251385
+.. _1264415: http://bugs.launchpad.net/python-cinderclient/+bug/1264415
+.. _1258489: http://bugs.launchpad.net/python-cinderclient/+bug/1258489
+.. _1248519: http://bugs.launchpad.net/python-cinderclient/+bug/1248519
+.. _1257747: http://bugs.launchpad.net/python-cinderclient/+bug/1257747
+
+1.0.7
+-----
+* Add support for read-only volumes
+* Add support for setting snapshot metadata
+* Deprecate volume-id arg to backup restore in favor of --volume
+* Add quota-usage command
+* Fix exception deprecation warning message
+* Report error when no args supplied to rename cmd
+
+.. _1241941: http://bugs.launchpad.net/python-cinderclient/+bug/1241941
+.. _1242816: http://bugs.launchpad.net/python-cinderclient/+bug/1242816
+.. _1233311: http://bugs.launchpad.net/python-cinderclient/+bug/1233311
+.. _1227307: http://bugs.launchpad.net/python-cinderclient/+bug/1227307
+.. _1240151: http://bugs.launchpad.net/python-cinderclient/+bug/1240151
+.. _1241682: http://bugs.launchpad.net/python-cinderclient/+bug/1241682
+
+
+1.0.6
+-----
+* Add support for multiple endpoints
+* Add response info for backup command
+* Add metadata option to cinder list command
+* Add timeout parameter for requests
+* Add update action for snapshot metadata
+* Add encryption metadata support
+* Add volume migrate support
+* Add support for QoS specs
+
+.. _1221104: http://bugs.launchpad.net/python-cinderclient/+bug/1221104
+.. _1220590: http://bugs.launchpad.net/python-cinderclient/+bug/1220590
+.. _1220147: http://bugs.launchpad.net/python-cinderclient/+bug/1220147
+.. _1214176: http://bugs.launchpad.net/python-cinderclient/+bug/1214176
+.. _1210874: http://bugs.launchpad.net/python-cinderclient/+bug/1210874
+.. _1210296: http://bugs.launchpad.net/python-cinderclient/+bug/1210296
+.. _1210292: http://bugs.launchpad.net/python-cinderclient/+bug/1210292
+.. _1207635: http://bugs.launchpad.net/python-cinderclient/+bug/1207635
+.. _1207609: http://bugs.launchpad.net/python-cinderclient/+bug/1207609
+.. _1207260: http://bugs.launchpad.net/python-cinderclient/+bug/1207260
+.. _1206968: http://bugs.launchpad.net/python-cinderclient/+bug/1206968
+.. _1203471: http://bugs.launchpad.net/python-cinderclient/+bug/1203471
+.. _1200214: http://bugs.launchpad.net/python-cinderclient/+bug/1200214
+.. _1195014: http://bugs.launchpad.net/python-cinderclient/+bug/1195014
+
+1.0.5
+-----
+* Add CLI man page
+* Add Availability Zone list command
+* Add support for scheduler-hints
+* Add support to extend volumes
+* Add support to reset state on volumes and snapshots
+* Add snapshot support for quota class
+
+.. _1190853: http://bugs.launchpad.net/python-cinderclient/+bug/1190853
+.. _1190731: http://bugs.launchpad.net/python-cinderclient/+bug/1190731
+.. _1169455: http://bugs.launchpad.net/python-cinderclient/+bug/1169455
+.. _1188452: http://bugs.launchpad.net/python-cinderclient/+bug/1188452
+.. _1180393: http://bugs.launchpad.net/python-cinderclient/+bug/1180393
+.. _1182678: http://bugs.launchpad.net/python-cinderclient/+bug/1182678
+.. _1179008: http://bugs.launchpad.net/python-cinderclient/+bug/1179008
+.. _1180059: http://bugs.launchpad.net/python-cinderclient/+bug/1180059
+.. _1170565: http://bugs.launchpad.net/python-cinderclient/+bug/1170565
+
+1.0.4
+-----
+* Added suport for backup-service commands
+.. _1163546: http://bugs.launchpad.net/python-cinderclient/+bug/1163546
+.. _1161857: http://bugs.launchpad.net/python-cinderclient/+bug/1161857
+.. _1160898: http://bugs.launchpad.net/python-cinderclient/+bug/1160898
+.. _1161857: http://bugs.launchpad.net/python-cinderclient/+bug/1161857
+.. _1156994: http://bugs.launchpad.net/python-cinderclient/+bug/1156994
+
+1.0.3
 -----
 
 * Added support for V2 Cinder API

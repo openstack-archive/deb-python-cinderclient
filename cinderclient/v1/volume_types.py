@@ -55,7 +55,7 @@ class VolumeType(base.Resource):
 
     def unset_keys(self, keys):
         """
-        Unset extra specs on a volue type.
+        Unset extra specs on a volume type.
 
         :param type_id: The :class:`VolumeType` to unset extra spec on
         :param keys: A list of keys to be unset
@@ -65,7 +65,7 @@ class VolumeType(base.Resource):
         # the return in the loop resulted in ony ONE key being unset.
         # since on success the return was NONE, we'll only interrupt the loop
         # and return if there's an error
-        result = None
+        resp = None
         for k in keys:
             resp = self.manager._delete(
                 "/types/%s/extra_specs/%s" % (
@@ -80,7 +80,7 @@ class VolumeTypeManager(base.ManagerWithFind):
     """
     resource_class = VolumeType
 
-    def list(self):
+    def list(self, search_opts=None):
         """
         Get a list of all volume types.
 

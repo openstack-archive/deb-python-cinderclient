@@ -1,8 +1,26 @@
+# Copyright (c) 2013 OpenStack Foundation
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from __future__ import print_function
+
 import os
 import re
 import sys
 import uuid
 
+import six
 import prettytable
 
 from cinderclient import exceptions
@@ -38,7 +56,7 @@ def add_arg(f, *args, **kwargs):
     # NOTE(sirp): avoid dups that can occur when the module is shared across
     # tests.
     if (args, kwargs) not in f.arguments:
-        # Because of the sematics of decorator composition if we just append
+        # Because of the semantics of decorator composition if we just append
         # to the options list positional options will appear to be backwards.
         f.arguments.insert(0, (args, kwargs))
 
@@ -70,8 +88,12 @@ def get_resource_manager_extra_kwargs(f, args, allow_conflicts=False):
 
         conflicting_keys = set(hook_kwargs.keys()) & set(extra_kwargs.keys())
         if conflicting_keys and not allow_conflicts:
-            raise Exception("Hook '%(hook_name)s' is attempting to redefine"
-                            " attributes '%(conflicting_keys)s'" % locals())
+            msg = ("Hook '%(hook_name)s' is attempting to redefine attributes "
+                   "'%(conflicting_keys)s'" % {
+                       'hook_name': hook_name,
+                       'conflicting_keys': conflicting_keys
+                   })
+            raise Exception(msg)
 
         extra_kwargs.update(hook_kwargs)
 
@@ -124,7 +146,14 @@ def pretty_choice_list(l):
     return ', '.join("'%s'" % i for i in l)
 
 
-def print_list(objs, fields, formatters={}):
+def _print(pt, order):
+    if sys.version_info >= (3, 0):
+        print(pt.get_string(sortby=order))
+    else:
+        print(strutils.safe_encode(pt.get_string(sortby=order)))
+
+
+def print_list(objs, fields, formatters={}, order_by=None):
     mixed_case_fields = ['serverId']
     pt = prettytable.PrettyTable([f for f in fields], caching=False)
     pt.aligns = ['l' for f in fields]
@@ -139,18 +168,23 @@ def print_list(objs, fields, formatters={}):
                     field_name = field.replace(' ', '_')
                 else:
                     field_name = field.lower().replace(' ', '_')
-                data = getattr(o, field_name, '')
+                if type(o) == dict and field in o:
+                    data = o[field]
+                else:
+                    data = getattr(o, field_name, '')
                 row.append(data)
         pt.add_row(row)
 
-    print strutils.safe_encode(pt.get_string(sortby=fields[0]))
+    if order_by is None:
+        order_by = fields[0]
+    _print(pt, order_by)
 
 
 def print_dict(d, property="Property"):
     pt = prettytable.PrettyTable([property, 'Value'], caching=False)
     pt.aligns = ['l', 'l']
-    [pt.add_row(list(r)) for r in d.iteritems()]
-    print strutils.safe_encode(pt.get_string(sortby=property))
+    [pt.add_row(list(r)) for r in six.iteritems(d)]
+    _print(pt, property)
 
 
 def find_resource(manager, name_or_id):
@@ -162,9 +196,12 @@ def find_resource(manager, name_or_id):
     except exceptions.NotFound:
         pass
 
+    if sys.version_info <= (3, 0):
+        name_or_id = strutils.safe_decode(name_or_id)
+
     # now try to get entity as uuid
     try:
-        uuid.UUID(strutils.safe_decode(name_or_id))
+        uuid.UUID(name_or_id)
         return manager.get(name_or_id)
     except (ValueError, exceptions.NotFound):
         pass
@@ -196,9 +233,14 @@ def find_resource(manager, name_or_id):
         raise exceptions.CommandError(msg)
 
 
+def find_volume(cs, volume):
+    """Get a volume by name or ID."""
+    return find_resource(cs.volumes, volume)
+
+
 def _format_servers_list_networks(server):
     output = []
-    for (network, addresses) in server.networks.items():
+    for (network, addresses) in list(server.networks.items()):
         if len(addresses) == 0:
             continue
         addresses_csv = ', '.join(addresses)
@@ -258,8 +300,8 @@ def slugify(value):
     From Django's "django/template/defaultfilters.py".
     """
     import unicodedata
-    if not isinstance(value, unicode):
-        value = unicode(value)
+    if not isinstance(value, six.text_type):
+        value = six.text_type(value)
     value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore')
-    value = unicode(_slugify_strip_re.sub('', value).strip().lower())
+    value = six.text_type(_slugify_strip_re.sub('', value).strip().lower())
     return _slugify_hyphenate_re.sub('-', value)

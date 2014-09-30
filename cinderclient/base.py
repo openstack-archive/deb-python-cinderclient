@@ -1,6 +1,6 @@
 # Copyright 2010 Jacob Kaplan-Moss
 
-# Copyright 2011 OpenStack LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -18,10 +18,13 @@
 """
 Base utilities to build API operation managers and objects on top of.
 """
-
+import abc
 import contextlib
 import hashlib
 import os
+
+import six
+
 from cinderclient import exceptions
 from cinderclient import utils
 
@@ -99,14 +102,15 @@ class Manager(utils.HookableMixin):
         # pair
         username = utils.env('OS_USERNAME', 'CINDER_USERNAME')
         url = utils.env('OS_URL', 'CINDER_URL')
-        uniqifier = hashlib.md5(username + url).hexdigest()
+        uniqifier = hashlib.md5(username.encode('utf-8') +
+                                url.encode('utf-8')).hexdigest()
 
         cache_dir = os.path.expanduser(os.path.join(base_dir, uniqifier))
 
         try:
-            os.makedirs(cache_dir, 0755)
+            os.makedirs(cache_dir, 0o755)
         except OSError:
-            # NOTE(kiall): This is typicaly either permission denied while
+            # NOTE(kiall): This is typically either permission denied while
             #              attempting to create the directory, or the directory
             #              already exists. Either way, don't fail.
             pass
@@ -120,7 +124,7 @@ class Manager(utils.HookableMixin):
         try:
             setattr(self, cache_attr, open(path, mode))
         except IOError:
-            # NOTE(kiall): This is typicaly a permission denied while
+            # NOTE(kiall): This is typically a permission denied while
             #              attempting to write the cache file.
             pass
 
@@ -163,10 +167,15 @@ class Manager(utils.HookableMixin):
         return body
 
 
-class ManagerWithFind(Manager):
+class ManagerWithFind(six.with_metaclass(abc.ABCMeta, Manager)):
     """
     Like a `Manager`, but with additional `find()`/`findall()` methods.
     """
+
+    @abc.abstractmethod
+    def list(self):
+        pass
+
     def find(self, **kwargs):
         """
         Find a single item with attributes matching ``**kwargs``.
@@ -192,9 +201,12 @@ class ManagerWithFind(Manager):
         the Python side.
         """
         found = []
-        searches = kwargs.items()
+        searches = list(kwargs.items())
 
-        for obj in self.list():
+        # Want to search for all tenants here so that when attempting to delete
+        # that a user like admin doesn't get a failure when trying to delete
+        # another tenant's volume by name.
+        for obj in self.list(search_opts={'all_tenants': 1}):
             try:
                 if all(getattr(obj, attr) == value
                        for (attr, value) in searches):
@@ -203,9 +215,6 @@ class ManagerWithFind(Manager):
                 continue
 
         return found
-
-    def list(self):
-        raise NotImplementedError
 
 
 class Resource(object):
@@ -245,7 +254,7 @@ class Resource(object):
         return None
 
     def _add_details(self, info):
-        for (k, v) in info.iteritems():
+        for (k, v) in six.iteritems(info):
             try:
                 setattr(self, k, v)
             except AttributeError:
@@ -264,8 +273,8 @@ class Resource(object):
             return self.__dict__[k]
 
     def __repr__(self):
-        reprkeys = sorted(k for k in self.__dict__.keys() if k[0] != '_' and
-                          k != 'manager')
+        reprkeys = sorted(k for k in self.__dict__ if k[0] != '_'
+                          and k != 'manager')
         info = ", ".join("%s=%s" % (k, getattr(self, k)) for k in reprkeys)
         return "<%s %s>" % (self.__class__.__name__, info)
 

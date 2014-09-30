@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack LLC.
+# Copyright (c) 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,7 +15,11 @@
 
 """Volume interface (v2 extension)."""
 
-import urllib
+import six
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
 
 from cinderclient import base
 
@@ -33,13 +37,14 @@ class Volume(base.Resource):
         """Update the name or description for this volume."""
         self.manager.update(self, **kwargs)
 
-    def attach(self, instance_uuid, mountpoint):
+    def attach(self, instance_uuid, mountpoint, mode='rw'):
         """Set attachment metadata.
 
         :param instance_uuid: uuid of the attaching instance.
         :param mountpoint: mountpoint on the attaching instance.
+        :param mode: the access mode.
         """
-        return self.manager.attach(self, instance_uuid, mountpoint)
+        return self.manager.attach(self, instance_uuid, mountpoint, mode)
 
     def detach(self):
         """Clear attachment metadata."""
@@ -78,7 +83,7 @@ class Volume(base.Resource):
     def set_metadata(self, volume, metadata):
         """Set or Append metadata to a volume.
 
-        :param type : The :class: `Volume` to set metadata on
+        :param volume : The :class: `Volume` to set metadata on
         :param metadata: A dict of key/value pairs to set
         """
         return self.manager.set_metadata(self, metadata)
@@ -86,15 +91,48 @@ class Volume(base.Resource):
     def upload_to_image(self, force, image_name, container_format,
                         disk_format):
         """Upload a volume to image service as an image."""
-        self.manager.upload_to_image(self, force, image_name, container_format,
-                                     disk_format)
+        return self.manager.upload_to_image(self, force, image_name,
+                                            container_format, disk_format)
 
     def force_delete(self):
-        """Delete the specififed volume ignoring it's current state.
+        """Delete the specified volume ignoring its current state.
 
         :param volume: The UUID of the volume to force-delete.
         """
         self.manager.force_delete(self)
+
+    def reset_state(self, state):
+        """Update the volume with the provided state."""
+        self.manager.reset_state(self, state)
+
+    def extend(self, volume, new_size):
+        """Extend the size of the specified volume.
+        :param volume: The UUID of the volume to extend
+        :param new_size: The desired size to extend volume to.
+        """
+
+        self.manager.extend(self, volume, new_size)
+
+    def migrate_volume(self, host, force_host_copy):
+        """Migrate the volume to a new host."""
+        self.manager.migrate_volume(self, host, force_host_copy)
+
+    def retype(self, volume_type, policy):
+        """Change a volume's type."""
+        self.manager.retype(self, volume_type, policy)
+
+    def update_all_metadata(self, metadata):
+        """Update all metadata of this volume."""
+        return self.manager.update_all_metadata(self, metadata)
+
+    def update_readonly_flag(self, volume, read_only):
+        """Update the read-only access mode flag of the specified volume.
+
+        :param volume: The UUID of the volume to update.
+        :param read_only: The value to indicate whether to update volume to
+            read-only access mode.
+        """
+        self.manager.update_readonly_flag(self, volume, read_only)
 
 
 class VolumeManager(base.ManagerWithFind):
@@ -105,7 +143,7 @@ class VolumeManager(base.ManagerWithFind):
                name=None, description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
-               metadata=None, imageRef=None):
+               metadata=None, imageRef=None, scheduler_hints=None):
         """Create a volume.
 
         :param size: Size of volume in GB
@@ -113,14 +151,16 @@ class VolumeManager(base.ManagerWithFind):
         :param name: Name of the volume
         :param description: Description of the volume
         :param volume_type: Type of volume
-        :rtype: :class:`Volume`
         :param user_id: User id derived from context
         :param project_id: Project id derived from context
         :param availability_zone: Availability Zone to use
         :param metadata: Optional metadata to set on volume creation
         :param imageRef: reference to an image stored in glance
         :param source_volid: ID of source volume to clone from
-        """
+        :param scheduler_hints: (optional extension) arbitrary key-value pairs
+                            specified by the client to help boot an instance
+        :rtype: :class:`Volume`
+       """
 
         if metadata is None:
             volume_metadata = {}
@@ -140,6 +180,7 @@ class VolumeManager(base.ManagerWithFind):
                            'metadata': volume_metadata,
                            'imageRef': imageRef,
                            'source_volid': source_volid,
+                           'scheduler_hints': scheduler_hints,
                            }}
         return self._create('/volumes', body, 'volume')
 
@@ -161,11 +202,11 @@ class VolumeManager(base.ManagerWithFind):
 
         qparams = {}
 
-        for opt, val in search_opts.iteritems():
+        for opt, val in six.iteritems(search_opts):
             if val:
                 qparams[opt] = val
 
-        query_string = "?%s" % urllib.urlencode(qparams) if qparams else ""
+        query_string = "?%s" % urlencode(qparams) if qparams else ""
 
         detail = ""
         if detailed:
@@ -201,18 +242,20 @@ class VolumeManager(base.ManagerWithFind):
         url = '/volumes/%s/action' % base.getid(volume)
         return self.api.client.post(url, body=body)
 
-    def attach(self, volume, instance_uuid, mountpoint):
+    def attach(self, volume, instance_uuid, mountpoint, mode='rw'):
         """Set attachment metadata.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to attach.
         :param instance_uuid: uuid of the attaching instance.
         :param mountpoint: mountpoint on the attaching instance.
+        :param mode: the access mode.
         """
         return self._action('os-attach',
                             volume,
                             {'instance_uuid': instance_uuid,
-                             'mountpoint': mountpoint})
+                             'mountpoint': mountpoint,
+                             'mode': mode})
 
     def detach(self, volume):
         """Clear attachment metadata.
@@ -286,7 +329,7 @@ class VolumeManager(base.ManagerWithFind):
         """Delete specified keys from volumes metadata.
 
         :param volume: The :class:`Volume`.
-        :param metadata: A list of keys to be removed.
+        :param keys: A list of keys to be removed.
         """
         for k in keys:
             self._delete("/volumes/%s/metadata/%s" % (base.getid(volume), k))
@@ -306,3 +349,73 @@ class VolumeManager(base.ManagerWithFind):
 
     def force_delete(self, volume):
         return self._action('os-force_delete', base.getid(volume))
+
+    def reset_state(self, volume, state):
+        """Update the provided volume with the provided state."""
+        return self._action('os-reset_status', volume, {'status': state})
+
+    def extend(self, volume, new_size):
+        return self._action('os-extend',
+                            base.getid(volume),
+                            {'new_size': new_size})
+
+    def get_encryption_metadata(self, volume_id):
+        """
+        Retrieve the encryption metadata from the desired volume.
+
+        :param volume_id: the id of the volume to query
+        :return: a dictionary of volume encryption metadata
+        """
+        return self._get("/volumes/%s/encryption" % volume_id)._info
+
+    def migrate_volume(self, volume, host, force_host_copy):
+        """Migrate volume to new host.
+
+        :param volume: The :class:`Volume` to migrate
+        :param host: The destination host
+        :param force_host_copy: Skip driver optimizations
+        """
+
+        return self._action('os-migrate_volume',
+                            volume,
+                            {'host': host, 'force_host_copy': force_host_copy})
+
+    def migrate_volume_completion(self, old_volume, new_volume, error):
+        """Complete the migration from the old volume to the temp new one.
+
+        :param old_volume: The original :class:`Volume` in the migration
+        :param new_volume: The new temporary :class:`Volume` in the migration
+        :param error: Inform of an error to cause migration cleanup
+        """
+
+        new_volume_id = base.getid(new_volume)
+        return self._action('os-migrate_volume_completion',
+                            old_volume,
+                            {'new_volume': new_volume_id, 'error': error})[1]
+
+    def update_all_metadata(self, volume, metadata):
+        """Update all metadata of a volume.
+
+        :param volume: The :class:`Volume`.
+        :param metadata: A list of keys to be updated.
+        """
+        body = {'metadata': metadata}
+        return self._update("/volumes/%s/metadata" % base.getid(volume),
+                            body)
+
+    def update_readonly_flag(self, volume, flag):
+        return self._action('os-update_readonly_flag',
+                            base.getid(volume),
+                            {'readonly': flag})
+
+    def retype(self, volume, volume_type, policy):
+        """Change a volume's type.
+
+        :param volume: The :class:`Volume` to retype
+        :param volume_type: New volume type
+        :param policy: Policy for migration during the retype
+        """
+        return self._action('os-retype',
+                            volume,
+                            {'new_type': volume_type,
+                             'migration_policy': policy})

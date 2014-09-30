@@ -17,8 +17,13 @@
 Volume snapshot interface (1.1 extension).
 """
 
-import urllib
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
+
 from cinderclient import base
+import six
 
 
 class Snapshot(base.Resource):
@@ -47,6 +52,22 @@ class Snapshot(base.Resource):
     @property
     def project_id(self):
         return self._info.get('os-extended-snapshot-attributes:project_id')
+
+    def reset_state(self, state):
+        """Update the snapshot with the privided state."""
+        self.manager.reset_state(self, state)
+
+    def set_metadata(self, metadata):
+        """Set metadata of this snapshot."""
+        return self.manager.set_metadata(self, metadata)
+
+    def delete_metadata(self, keys):
+        """Delete metadata of this snapshot."""
+        return self.manager.delete_metadata(self, keys)
+
+    def update_all_metadata(self, metadata):
+        """Update_all metadata of this snapshot."""
+        return self.manager.update_all_metadata(self, metadata)
 
 
 class SnapshotManager(base.ManagerWithFind):
@@ -95,11 +116,17 @@ class SnapshotManager(base.ManagerWithFind):
 
         qparams = {}
 
-        for opt, val in search_opts.iteritems():
+        for opt, val in six.iteritems(search_opts):
             if val:
                 qparams[opt] = val
 
-        query_string = "?%s" % urllib.urlencode(qparams) if qparams else ""
+        # Transform the dict to a sequence of two-element tuples in fixed
+        # order, then the encoded string will be consistent in Python 2&3.
+        if qparams:
+            new_qparams = sorted(qparams.items(), key=lambda x: x[0])
+            query_string = "?%s" % urlencode(new_qparams)
+        else:
+            query_string = ""
 
         detail = ""
         if detailed:
@@ -128,3 +155,48 @@ class SnapshotManager(base.ManagerWithFind):
         body = {"snapshot": kwargs}
 
         self._update("/snapshots/%s" % base.getid(snapshot), body)
+
+    def reset_state(self, snapshot, state):
+        """Update the specified volume with the provided state."""
+        return self._action('os-reset_status', snapshot, {'status': state})
+
+    def _action(self, action, snapshot, info=None, **kwargs):
+        """Perform a snapshot action."""
+        body = {action: info}
+        self.run_hooks('modify_body_for_action', body, **kwargs)
+        url = '/snapshots/%s/action' % base.getid(snapshot)
+        return self.api.client.post(url, body=body)
+
+    def update_snapshot_status(self, snapshot, update_dict):
+        return self._action('os-update_snapshot_status',
+                            base.getid(snapshot), update_dict)
+
+    def set_metadata(self, snapshot, metadata):
+        """Update/Set a snapshots metadata.
+
+        :param snapshot: The :class:`Snapshot`.
+        :param metadata: A list of keys to be set.
+        """
+        body = {'metadata': metadata}
+        return self._create("/snapshots/%s/metadata" % base.getid(snapshot),
+                            body, "metadata")
+
+    def delete_metadata(self, snapshot, keys):
+        """Delete specified keys from snapshot metadata.
+
+        :param snapshot: The :class:`Snapshot`.
+        :param keys: A list of keys to be removed.
+        """
+        snapshot_id = base.getid(snapshot)
+        for k in keys:
+            self._delete("/snapshots/%s/metadata/%s" % (snapshot_id, k))
+
+    def update_all_metadata(self, snapshot, metadata):
+        """Update_all snapshot metadata.
+
+        :param snapshot: The :class:`Snapshot`.
+        :param metadata: A list of keys to be updated.
+        """
+        body = {'metadata': metadata}
+        return self._update("/snapshots/%s/metadata" % base.getid(snapshot),
+                            body)

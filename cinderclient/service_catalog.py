@@ -1,4 +1,4 @@
-# Copyright 2011 OpenStack LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # Copyright 2011, Piston Cloud Computing, Inc.
 #
 # All Rights Reserved.
@@ -33,7 +33,8 @@ class ServiceCatalog(object):
                 service_name=None, volume_service_name=None):
         """Fetch the public URL from the Compute service for
         a particular endpoint attribute. If none given, return
-        the first. See tests for sample service catalog."""
+        the first. See tests for sample service catalog.
+        """
         matching_endpoints = []
         if 'endpoints' in self.catalog:
             # We have a bastardized service catalog. Treat it special. :/
@@ -44,22 +45,29 @@ class ServiceCatalog(object):
                 raise cinderclient.exceptions.EndpointNotFound()
 
         # We don't always get a service catalog back ...
-        if not 'serviceCatalog' in self.catalog['access']:
+        if 'serviceCatalog' not in self.catalog['access']:
             return None
 
         # Full catalog ...
         catalog = self.catalog['access']['serviceCatalog']
 
         for service in catalog:
-            if service.get("type") != service_type:
+
+            # NOTE(thingee): For backwards compatibility, if they have v2
+            # enabled and the service_type is set to 'volume', go ahead and
+            # accept that.
+            skip_service_type_check = False
+            if service_type == 'volumev2' and service['type'] == 'volume':
+                version = service['endpoints'][0]['publicURL'].split('/')[3]
+                if version == 'v2':
+                    skip_service_type_check = True
+
+            if (not skip_service_type_check
+                    and service.get("type") != service_type):
                 continue
 
-            if (service_name and service_type == 'compute' and
-                    service.get('name') != service_name):
-                continue
-
-            if (volume_service_name and service_type == 'volume' and
-                    service.get('name') != volume_service_name):
+            if (volume_service_name and service_type in ('volume', 'volumev2')
+                    and service.get('name') != volume_service_name):
                 continue
 
             endpoints = service['endpoints']
