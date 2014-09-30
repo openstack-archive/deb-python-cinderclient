@@ -1,3 +1,10 @@
+python-cinderclient (1:1.1.1-1) experimental; urgency=medium
+
+  * New upstream release.
+  * Uploading to experimental just right before Jessie freeze.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 30 Sep 2014 14:50:23 +0800
+
 python-cinderclient (1:1.0.8-2) unstable; urgency=medium
 
   * Uploading to unstable.
