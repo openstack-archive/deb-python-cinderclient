@@ -14,7 +14,9 @@
 #    under the License.
 
 from cinderclient import client
-from cinderclient.v1 import availability_zones
+from cinderclient.v2 import availability_zones
+from cinderclient.v2 import cgsnapshots
+from cinderclient.v2 import consistencygroups
 from cinderclient.v2 import limits
 from cinderclient.v2 import qos_specs
 from cinderclient.v2 import quota_classes
@@ -42,14 +44,14 @@ class Client(object):
         ...
     """
 
-    def __init__(self, username, api_key, project_id=None, auth_url='',
-                 insecure=False, timeout=None, tenant_id=None,
+    def __init__(self, username=None, api_key=None, project_id=None,
+                 auth_url='', insecure=False, timeout=None, tenant_id=None,
                  proxy_tenant_id=None, proxy_token=None, region_name=None,
                  endpoint_type='publicURL', extensions=None,
                  service_type='volumev2', service_name=None,
-                 volume_service_name=None, retries=None,
-                 http_log_debug=False,
-                 cacert=None):
+                 volume_service_name=None, retries=None, http_log_debug=False,
+                 cacert=None, auth_system='keystone', auth_plugin=None,
+                 session=None, **kwargs):
         # FIXME(comstud): Rename the api_key argument above when we
         # know it's not being used as keyword argument
         password = api_key
@@ -68,6 +70,9 @@ class Client(object):
         self.restores = volume_backups_restore.VolumeBackupRestoreManager(self)
         self.transfers = volume_transfers.VolumeTransferManager(self)
         self.services = services.ServiceManager(self)
+        self.consistencygroups = consistencygroups.\
+            ConsistencygroupManager(self)
+        self.cgsnapshots = cgsnapshots.CgsnapshotManager(self)
         self.availability_zones = \
             availability_zones.AvailabilityZoneManager(self)
 
@@ -78,16 +83,16 @@ class Client(object):
                     setattr(self, extension.name,
                             extension.manager_class(self))
 
-        self.client = client.HTTPClient(
-            username,
-            password,
-            project_id,
-            auth_url,
+        self.client = client._construct_http_client(
+            username=username,
+            password=password,
+            project_id=project_id,
+            auth_url=auth_url,
             insecure=insecure,
             timeout=timeout,
             tenant_id=tenant_id,
+            proxy_tenant_id=tenant_id,
             proxy_token=proxy_token,
-            proxy_tenant_id=proxy_tenant_id,
             region_name=region_name,
             endpoint_type=endpoint_type,
             service_type=service_type,
@@ -95,7 +100,11 @@ class Client(object):
             volume_service_name=volume_service_name,
             retries=retries,
             http_log_debug=http_log_debug,
-            cacert=cacert)
+            cacert=cacert,
+            auth_system=auth_system,
+            auth_plugin=auth_plugin,
+            session=session,
+            **kwargs)
 
     def authenticate(self):
         """Authenticate against the server.

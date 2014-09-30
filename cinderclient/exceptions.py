@@ -41,6 +41,15 @@ class NoUniqueMatch(Exception):
     pass
 
 
+class AuthSystemNotFound(Exception):
+    """When the user specify a AuthSystem but not installed."""
+    def __init__(self, auth_system):
+        self.auth_system = auth_system
+
+    def __str__(self):
+        return "AuthSystemNotFound: %s" % repr(self.auth_system)
+
+
 class NoTokenLookupException(Exception):
     """This form of authentication does not support looking up
        endpoints from an existing token.
@@ -172,4 +181,5 @@ def from_response(response, body):
         return cls(code=response.status_code, message=message, details=details,
                    request_id=request_id)
     else:
-        return cls(code=response.status_code, request_id=request_id)
+        return cls(code=response.status_code, request_id=request_id,
+                   message=response.reason)

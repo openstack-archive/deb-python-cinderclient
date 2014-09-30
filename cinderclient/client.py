@@ -14,7 +14,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 """
 OpenStack Client interface. Handles the REST calls and responses.
 """
@@ -22,6 +21,16 @@ OpenStack Client interface. Handles the REST calls and responses.
 from __future__ import print_function
 
 import logging
+
+from keystoneclient import access
+from keystoneclient import adapter
+from keystoneclient.auth.identity import base
+import requests
+
+from cinderclient import exceptions
+from cinderclient.openstack.common import strutils
+from cinderclient import utils
+
 
 try:
     import urlparse
@@ -43,27 +52,113 @@ if not hasattr(urlparse, 'parse_qsl'):
     import cgi
     urlparse.parse_qsl = cgi.parse_qsl
 
-import requests
+_VALID_VERSIONS = ['v1', 'v2']
 
-from cinderclient import exceptions
-from cinderclient import service_catalog
-from cinderclient import utils
+
+def get_volume_api_from_url(url):
+    scheme, netloc, path, query, frag = urlparse.urlsplit(url)
+    components = path.split("/")
+
+    for version in _VALID_VERSIONS:
+        if version in components:
+            return version[1:]
+
+    msg = "Invalid client version '%s'. must be one of: %s" % (
+        (version, ', '.join(valid_versions)))
+    raise exceptions.UnsupportedVersion(msg)
+
+
+class SessionClient(adapter.LegacyJsonAdapter):
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault('user_agent', 'python-cinderclient')
+        kwargs.setdefault('service_type', 'volume')
+        super(SessionClient, self).__init__(**kwargs)
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault('authenticated', False)
+        return super(SessionClient, self).request(*args, **kwargs)
+
+    def _cs_request(self, url, method, **kwargs):
+        # this function is mostly redundant but makes compatibility easier
+        kwargs.setdefault('authenticated', True)
+        return self.request(url, method, **kwargs)
+
+    def get(self, url, **kwargs):
+        return self._cs_request(url, 'GET', **kwargs)
+
+    def post(self, url, **kwargs):
+        return self._cs_request(url, 'POST', **kwargs)
+
+    def put(self, url, **kwargs):
+        return self._cs_request(url, 'PUT', **kwargs)
+
+    def delete(self, url, **kwargs):
+        return self._cs_request(url, 'DELETE', **kwargs)
+
+    def _invalidate(self, auth=None):
+        # NOTE(jamielennox): This is being implemented in keystoneclient
+        return self.session.invalidate(auth or self.auth)
+
+    def _get_token(self, auth=None):
+        # NOTE(jamielennox): This is being implemented in keystoneclient
+        return self.session.get_token(auth or self.auth)
+
+    def _get_endpoint(self, auth=None, **kwargs):
+        # NOTE(jamielennox): This is being implemented in keystoneclient
+        if self.service_type:
+            kwargs.setdefault('service_type', self.service_type)
+        if self.service_name:
+            kwargs.setdefault('service_name', self.service_name)
+        if self.interface:
+            kwargs.setdefault('interface', self.interface)
+        if self.region_name:
+            kwargs.setdefault('region_name', self.region_name)
+        return self.session.get_endpoint(auth or self.auth, **kwargs)
+
+    def get_volume_api_version_from_endpoint(self):
+        return get_volume_api_from_url(self._get_endpoint())
+
+    def authenticate(self, auth=None):
+        self._invalidate(auth)
+        return self._get_token(auth)
+
+    @property
+    def service_catalog(self):
+        # NOTE(jamielennox): This is ugly and should be deprecated.
+        auth = self.auth or self.session.auth
+
+        if isinstance(auth, base.BaseIdentityPlugin):
+            return auth.get_access(self.session).service_catalog
+
+        raise AttributeError('There is no service catalog for this type of '
+                             'auth plugin.')
 
 
 class HTTPClient(object):
 
     USER_AGENT = 'python-cinderclient'
 
-    def __init__(self, user, password, projectid, auth_url, insecure=False,
-                 timeout=None, tenant_id=None, proxy_tenant_id=None,
-                 proxy_token=None, region_name=None,
+    def __init__(self, user, password, projectid, auth_url=None,
+                 insecure=False, timeout=None, tenant_id=None,
+                 proxy_tenant_id=None, proxy_token=None, region_name=None,
                  endpoint_type='publicURL', service_type=None,
                  service_name=None, volume_service_name=None, retries=None,
-                 http_log_debug=False, cacert=None):
+                 http_log_debug=False, cacert=None,
+                 auth_system='keystone', auth_plugin=None):
         self.user = user
         self.password = password
         self.projectid = projectid
         self.tenant_id = tenant_id
+
+        if auth_system and auth_system != 'keystone' and not auth_plugin:
+            raise exceptions.AuthSystemNotFound(auth_system)
+
+        if not auth_url and auth_system and auth_system != 'keystone':
+            auth_url = auth_plugin.get_auth_url()
+            if not auth_url:
+                raise exceptions.EndpointNotFound()
+
         self.auth_url = auth_url.rstrip('/')
         self.version = 'v1'
         self.region_name = region_name
@@ -88,13 +183,10 @@ class HTTPClient(object):
             else:
                 self.verify_cert = True
 
+        self.auth_system = auth_system
+        self.auth_plugin = auth_plugin
+
         self._logger = logging.getLogger(__name__)
-        if self.http_log_debug and not self._logger.handlers:
-            ch = logging.StreamHandler()
-            self._logger.setLevel(logging.DEBUG)
-            self._logger.addHandler(ch)
-            if hasattr(requests, 'logging'):
-                requests.logging.getLogger(requests.__name__).addHandler(ch)
 
     def http_log_req(self, args, kwargs):
         if not self.http_log_debug:
@@ -112,7 +204,11 @@ class HTTPClient(object):
             string_parts.append(header)
 
         if 'data' in kwargs:
-            string_parts.append(" -d '%s'" % (kwargs['data']))
+            if "password" in kwargs['data']:
+                data = strutils.mask_password(kwargs['data'])
+            else:
+                data = kwargs['data']
+            string_parts.append(" -d '%s'" % (data))
         self._logger.debug("\nREQ: %s\n" % "".join(string_parts))
 
     def http_log_resp(self, resp):
@@ -192,10 +288,10 @@ class HTTPClient(object):
                 else:
                     raise
             except requests.exceptions.ConnectionError as e:
-                # Catch a connection refused from requests.request
-                self._logger.debug("Connection refused: %s" % e)
-                msg = 'Unable to establish connection: %s' % e
-                raise exceptions.ConnectionError(msg)
+                self._logger.debug("Connection error: %s" % e)
+                if attempts > self.retries:
+                    msg = 'Unable to establish connection: %s' % e
+                    raise exceptions.ConnectionError(msg)
             self._logger.debug(
                 "Failed attempt(%s of %s), retrying in %s seconds" %
                 (attempts, self.retries, backoff))
@@ -214,6 +310,9 @@ class HTTPClient(object):
     def delete(self, url, **kwargs):
         return self._cs_request(url, 'DELETE', **kwargs)
 
+    def get_volume_api_version_from_endpoint(self):
+        return get_volume_api_from_url(self.management_url)
+
     def _extract_service_catalog(self, url, resp, body, extract_token=True):
         """See what the auth service told us and process the response.
         We may get redirected to another site, fail or actually get
@@ -223,19 +322,16 @@ class HTTPClient(object):
         if resp.status_code == 200:  # content must always present
             try:
                 self.auth_url = url
-                self.service_catalog = \
-                    service_catalog.ServiceCatalog(body)
+                self.auth_ref = access.AccessInfo.factory(resp, body)
+                self.service_catalog = self.auth_ref.service_catalog
 
                 if extract_token:
-                    self.auth_token = self.service_catalog.get_token()
+                    self.auth_token = self.auth_ref.auth_token
 
                 management_url = self.service_catalog.url_for(
-                    attr='region',
-                    filter_value=self.region_name,
+                    region_name=self.region_name,
                     endpoint_type=self.endpoint_type,
-                    service_type=self.service_type,
-                    service_name=self.service_name,
-                    volume_service_name=self.volume_service_name)
+                    service_type=self.service_type)
                 self.management_url = management_url.rstrip('/')
                 return None
             except exceptions.AmbiguousEndpoints:
@@ -295,7 +391,10 @@ class HTTPClient(object):
         auth_url = self.auth_url
         if self.version == "v2.0":
             while auth_url:
-                auth_url = self._v2_auth(auth_url)
+                if not self.auth_system or self.auth_system == 'keystone':
+                    auth_url = self._v2_auth(auth_url)
+                else:
+                    auth_url = self._plugin_auth(auth_url)
 
             # Are we acting on behalf of another user via an
             # existing token? If so, our actual endpoints may
@@ -341,6 +440,9 @@ class HTTPClient(object):
         else:
             raise exceptions.from_response(resp, body)
 
+    def _plugin_auth(self, auth_url):
+        return self.auth_plugin.authenticate(self, auth_url)
+
     def _v2_auth(self, url):
         """Authenticate against a v2.0 auth service."""
         body = {"auth": {
@@ -367,17 +469,52 @@ class HTTPClient(object):
 
         return self._extract_service_catalog(url, resp, body)
 
-    def get_volume_api_version_from_endpoint(self):
-        magic_tuple = urlparse.urlsplit(self.management_url)
-        scheme, netloc, path, query, frag = magic_tuple
-        components = path.split("/")
-        valid_versions = ['v1', 'v2']
-        for version in valid_versions:
-            if version in components:
-                return version[1:]
-        msg = "Invalid client version '%s'. must be one of: %s" % (
-            (version, ', '.join(valid_versions)))
-        raise exceptions.UnsupportedVersion(msg)
+
+def _construct_http_client(username=None, password=None, project_id=None,
+                           auth_url=None, insecure=False, timeout=None,
+                           proxy_tenant_id=None, proxy_token=None,
+                           region_name=None, endpoint_type='publicURL',
+                           service_type='volume',
+                           service_name=None, volume_service_name=None,
+                           retries=None,
+                           http_log_debug=False,
+                           auth_system='keystone', auth_plugin=None,
+                           cacert=None, tenant_id=None,
+                           session=None,
+                           auth=None,
+                           **kwargs):
+
+    if session:
+        kwargs.setdefault('interface', endpoint_type)
+        return SessionClient(session=session,
+                             auth=auth,
+                             service_type=service_type,
+                             service_name=service_name,
+                             region_name=region_name,
+                             **kwargs)
+    else:
+        # FIXME(jamielennox): username and password are now optional. Need
+        # to test that they were provided in this mode.
+        return HTTPClient(username,
+                          password,
+                          projectid=project_id,
+                          auth_url=auth_url,
+                          insecure=insecure,
+                          timeout=timeout,
+                          tenant_id=tenant_id,
+                          proxy_token=proxy_token,
+                          proxy_tenant_id=proxy_tenant_id,
+                          region_name=region_name,
+                          endpoint_type=endpoint_type,
+                          service_type=service_type,
+                          service_name=service_name,
+                          volume_service_name=volume_service_name,
+                          retries=retries,
+                          http_log_debug=http_log_debug,
+                          cacert=cacert,
+                          auth_system=auth_system,
+                          auth_plugin=auth_plugin,
+                          )
 
 
 def get_client_class(version):

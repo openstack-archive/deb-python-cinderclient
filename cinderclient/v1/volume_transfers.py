@@ -35,7 +35,7 @@ class VolumeTransferManager(base.ManagerWithFind):
     resource_class = VolumeTransfer
 
     def create(self, volume_id, name=None):
-        """Create a volume transfer.
+        """Creates a volume transfer.
 
         :param volume_id: The ID of the volume to transfer.
         :param name: The name of the transfer.
@@ -48,7 +48,7 @@ class VolumeTransferManager(base.ManagerWithFind):
     def accept(self, transfer_id, auth_key):
         """Accept a volume transfer.
 
-        :param transfer_id: The ID of the trasnfer to accept.
+        :param transfer_id: The ID of the transfer to accept.
         :param auth_key: The auth_key of the transfer.
         :rtype: :class:`VolumeTransfer`
         """

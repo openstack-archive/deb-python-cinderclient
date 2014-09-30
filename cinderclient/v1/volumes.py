@@ -112,7 +112,7 @@ class Volume(base.Resource):
         :param volume: The UUID of the volume to extend.
         :param new_size: The desired size to extend volume to.
         """
-        self.manager.extend(self, volume, new_size)
+        self.manager.extend(self, new_size)
 
     def migrate_volume(self, host, force_host_copy):
         """Migrate the volume to a new host."""
@@ -134,7 +134,7 @@ class Volume(base.Resource):
         :param read_only: The value to indicate whether to update volume to
             read-only access mode.
         """
-        self.manager.update_readonly_flag(self, volume, read_only)
+        self.manager.update_readonly_flag(self, read_only)
 
 
 class VolumeManager(base.ManagerWithFind):
@@ -149,7 +149,7 @@ class VolumeManager(base.ManagerWithFind):
                project_id=None, availability_zone=None,
                metadata=None, imageRef=None):
         """
-        Create a volume.
+        Creates a volume.
 
         :param size: Size of volume in GB
         :param snapshot_id: ID of the snapshot
@@ -190,7 +190,7 @@ class VolumeManager(base.ManagerWithFind):
         """
         Get a volume.
 
-        :param volume_id: The ID of the volume to delete.
+        :param volume_id: The ID of the volume to get.
         :rtype: :class:`Volume`
         """
         return self._get("/volumes/%s" % volume_id, "volume")
@@ -425,3 +425,8 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-update_readonly_flag',
                             base.getid(volume),
                             {'readonly': flag})
+
+    def set_bootable(self, volume, flag):
+        return self._action('os-set_bootable',
+                            base.getid(volume),
+                            {'bootable': flag})

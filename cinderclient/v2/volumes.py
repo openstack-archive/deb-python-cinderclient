@@ -24,6 +24,11 @@ except ImportError:
 from cinderclient import base
 
 
+SORT_DIR_VALUES = ('asc', 'desc')
+SORT_KEY_VALUES = ('id', 'status', 'size', 'availability_zone', 'name',
+                   'bootable', 'created_at')
+
+
 class Volume(base.Resource):
     """A volume is an extra block level storage to the OpenStack instances."""
     def __repr__(self):
@@ -111,7 +116,7 @@ class Volume(base.Resource):
         :param new_size: The desired size to extend volume to.
         """
 
-        self.manager.extend(self, volume, new_size)
+        self.manager.extend(self, new_size)
 
     def migrate_volume(self, host, force_host_copy):
         """Migrate the volume to a new host."""
@@ -132,21 +137,44 @@ class Volume(base.Resource):
         :param read_only: The value to indicate whether to update volume to
             read-only access mode.
         """
-        self.manager.update_readonly_flag(self, volume, read_only)
+        self.manager.update_readonly_flag(self, read_only)
+
+    def manage(self, host, ref, name=None, description=None,
+               volume_type=None, availability_zone=None, metadata=None,
+               bootable=False):
+        """Manage an existing volume."""
+        self.manager.manage(host=host, ref=ref, name=name,
+                            description=description, volume_type=volume_type,
+                            availability_zone=availability_zone,
+                            metadata=metadata, bootable=bootable)
+
+    def unmanage(self, volume):
+        """Unmanage a volume."""
+        self.manager.unmanage(volume)
+
+    def promote(self, volume):
+        """Promote secondary to be primary in relationship."""
+        self.manager.promote(volume)
+
+    def reenable(self, volume):
+        """Sync the secondary volume with primary for a relationship."""
+        self.manager.reenable(volume)
 
 
 class VolumeManager(base.ManagerWithFind):
     """Manage :class:`Volume` resources."""
     resource_class = Volume
 
-    def create(self, size, snapshot_id=None, source_volid=None,
-               name=None, description=None,
+    def create(self, size, consistencygroup_id=None, snapshot_id=None,
+               source_volid=None, name=None, description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
-               metadata=None, imageRef=None, scheduler_hints=None):
-        """Create a volume.
+               metadata=None, imageRef=None, scheduler_hints=None,
+               source_replica=None):
+        """Creates a volume.
 
         :param size: Size of volume in GB
+        :param consistencygroup_id: ID of the consistencygroup
         :param snapshot_id: ID of the snapshot
         :param name: Name of the volume
         :param description: Description of the volume
@@ -157,6 +185,7 @@ class VolumeManager(base.ManagerWithFind):
         :param metadata: Optional metadata to set on volume creation
         :param imageRef: reference to an image stored in glance
         :param source_volid: ID of source volume to clone from
+        :param source_replica: ID of source volume to clone replica
         :param scheduler_hints: (optional extension) arbitrary key-value pairs
                             specified by the client to help boot an instance
         :rtype: :class:`Volume`
@@ -168,6 +197,7 @@ class VolumeManager(base.ManagerWithFind):
             volume_metadata = metadata
 
         body = {'volume': {'size': size,
+                           'consistencygroup_id': consistencygroup_id,
                            'snapshot_id': snapshot_id,
                            'name': name,
                            'description': description,
@@ -180,21 +210,33 @@ class VolumeManager(base.ManagerWithFind):
                            'metadata': volume_metadata,
                            'imageRef': imageRef,
                            'source_volid': source_volid,
-                           'scheduler_hints': scheduler_hints,
+                           'source_replica': source_replica,
                            }}
+
+        if scheduler_hints:
+            body['OS-SCH-HNT:scheduler_hints'] = scheduler_hints
+
         return self._create('/volumes', body, 'volume')
 
     def get(self, volume_id):
         """Get a volume.
 
-        :param volume_id: The ID of the volume to delete.
+        :param volume_id: The ID of the volume to get.
         :rtype: :class:`Volume`
         """
         return self._get("/volumes/%s" % volume_id, "volume")
 
-    def list(self, detailed=True, search_opts=None):
-        """Get a list of all volumes.
+    def list(self, detailed=True, search_opts=None, marker=None, limit=None,
+             sort_key=None, sort_dir=None):
+        """Lists all volumes.
 
+        :param detailed: Whether to return detailed volume info.
+        :param search_opts: Search options to filter out volumes.
+        :param marker: Begin returning volumes that appear later in the volume
+                       list than that represented by this volume id.
+        :param limit: Maximum number of volumes to return.
+        :param sort_key: Key to be sorted.
+        :param sort_dir: Sort direction, should be 'desc' or 'asc'.
         :rtype: list of :class:`Volume`
         """
         if search_opts is None:
@@ -206,7 +248,33 @@ class VolumeManager(base.ManagerWithFind):
             if val:
                 qparams[opt] = val
 
-        query_string = "?%s" % urlencode(qparams) if qparams else ""
+        if marker:
+            qparams['marker'] = marker
+
+        if limit:
+            qparams['limit'] = limit
+
+        if sort_key is not None:
+            if sort_key in SORT_KEY_VALUES:
+                qparams['sort_key'] = sort_key
+            else:
+                raise ValueError('sort_key must be one of the following: %s.'
+                                 % ', '.join(SORT_KEY_VALUES))
+
+        if sort_dir is not None:
+            if sort_dir in SORT_DIR_VALUES:
+                qparams['sort_dir'] = sort_dir
+            else:
+                raise ValueError('sort_dir must be one of the following: %s.'
+                                 % ', '.join(SORT_DIR_VALUES))
+
+        # Transform the dict to a sequence of two-element tuples in fixed
+        # order, then the encoded string will be consistent in Python 2&3.
+        if qparams:
+            new_qparams = sorted(qparams.items(), key=lambda x: x[0])
+            query_string = "?%s" % urlencode(new_qparams)
+        else:
+            query_string = ""
 
         detail = ""
         if detailed:
@@ -225,7 +293,7 @@ class VolumeManager(base.ManagerWithFind):
     def update(self, volume, **kwargs):
         """Update the name or description for a volume.
 
-        :param volume: The :class:`Volume` to delete.
+        :param volume: The :class:`Volume` to update.
         """
         if not kwargs:
             return
@@ -419,3 +487,35 @@ class VolumeManager(base.ManagerWithFind):
                             volume,
                             {'new_type': volume_type,
                              'migration_policy': policy})
+
+    def set_bootable(self, volume, flag):
+        return self._action('os-set_bootable',
+                            base.getid(volume),
+                            {'bootable': flag})
+
+    def manage(self, host, ref, name=None, description=None,
+               volume_type=None, availability_zone=None, metadata=None,
+               bootable=False):
+        """Manage an existing volume."""
+        body = {'volume': {'host': host,
+                           'ref': ref,
+                           'name': name,
+                           'description': description,
+                           'volume_type': volume_type,
+                           'availability_zone': availability_zone,
+                           'metadata': metadata,
+                           'bootable': bootable
+                           }}
+        return self._create('/os-volume-manage', body, 'volume')
+
+    def unmanage(self, volume):
+        """Unmanage a volume."""
+        return self._action('os-unmanage', volume, None)
+
+    def promote(self, volume):
+        """Promote secondary to be primary in relationship."""
+        return self._action('os-promote-replica', volume, None)
+
+    def reenable(self, volume):
+        """Sync the secondary volume with primary for a relationship."""
+        return self._action('os-reenable-replica', volume, None)

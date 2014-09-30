@@ -37,10 +37,10 @@ class ListExtManager(base.Manager):
         return self._list("/extensions", 'extensions')
 
 
-@utils.service_type('volume')
+@utils.service_type('volumev2')
 def do_list_extensions(client, _args):
     """
-    List all the os-api extensions that are available.
+    Lists all available os-api extensions.
     """
     extensions = client.list_extensions.show_all()
     fields = ["Name", "Summary", "Alias", "Updated"]

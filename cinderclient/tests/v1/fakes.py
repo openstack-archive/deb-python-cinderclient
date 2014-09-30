@@ -285,6 +285,9 @@ class FakeHTTPClient(base_client.HTTPClient):
     def delete_snapshots_1234(self, **kw):
         return (202, {}, {})
 
+    def delete_snapshots_5678(self, **kw):
+        return (202, {}, {})
+
     #
     # Volumes
     #
@@ -354,6 +357,8 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert 'force_host_copy' in body[action]
         elif action == 'os-update_readonly_flag':
             assert list(body[action]) == ['readonly']
+        elif action == 'os-set_bootable':
+            assert list(body[action]) == ['bootable']
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
@@ -400,6 +405,12 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'volumes': 2,
                           'snapshots': 2,
                           'gigabytes': 1}})
+
+    def delete_os_quota_sets_1234(self, **kw):
+        return (200, {}, {})
+
+    def delete_os_quota_sets_test(self, **kw):
+        return (200, {}, {})
 
     #
     # Quota Classes
@@ -467,13 +478,13 @@ class FakeHTTPClient(base_client.HTTPClient):
     def get_types_1_encryption(self, **kw):
         return (200, {}, {'id': 1, 'volume_type_id': 1, 'provider': 'test',
                           'cipher': 'test', 'key_size': 1,
-                          'control_location': 'front'})
+                          'control_location': 'front-end'})
 
     def get_types_2_encryption(self, **kw):
         return (200, {}, {})
 
     def post_types_2_encryption(self, body, **kw):
-        return (200, {}, {'encryption': {}})
+        return (200, {}, {'encryption': body})
 
     def put_types_1_encryption_1(self, body, **kw):
         return (200, {}, {})
@@ -707,6 +718,11 @@ class FakeHTTPClient(base_client.HTTPClient):
     def put_os_services_disable(self, body, **kw):
         return (200, {}, {'host': body['host'], 'binary': body['binary'],
                 'status': 'disabled'})
+
+    def put_os_services_disable_log_reason(self, body, **kw):
+        return (200, {}, {'host': body['host'], 'binary': body['binary'],
+                'status': 'disabled',
+                'disabled_reason': body['disabled_reason']})
 
     def get_os_availability_zone(self, **kw):
         return (200, {}, {

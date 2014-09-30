@@ -69,6 +69,32 @@ def _stub_snapshot(**kwargs):
     return snapshot
 
 
+def _stub_consistencygroup(**kwargs):
+    consistencygroup = {
+        "created_at": "2012-08-28T16:30:31.000000",
+        "description": None,
+        "name": "cg",
+        "id": "11111111-1111-1111-1111-111111111111",
+        "availability_zone": "myzone",
+        "status": "available",
+    }
+    consistencygroup.update(kwargs)
+    return consistencygroup
+
+
+def _stub_cgsnapshot(**kwargs):
+    cgsnapshot = {
+        "created_at": "2012-08-28T16:30:31.000000",
+        "description": None,
+        "name": None,
+        "id": "11111111-1111-1111-1111-111111111111",
+        "status": "available",
+        "consistencygroup_id": "00000000-0000-0000-0000-000000000000",
+    }
+    cgsnapshot.update(kwargs)
+    return cgsnapshot
+
+
 def _self_href(base_uri, tenant_id, backup_id):
     return '%s/v2/%s/backups/%s' % (base_uri, tenant_id, backup_id)
 
@@ -294,6 +320,9 @@ class FakeHTTPClient(base_client.HTTPClient):
     def delete_snapshots_1234(self, **kw):
         return (202, {}, {})
 
+    def delete_snapshots_5678(self, **kw):
+        return (202, {}, {})
+
     #
     # Volumes
     #
@@ -365,6 +394,14 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert list(body[action]) == ['readonly']
         elif action == 'os-retype':
             assert 'new_type' in body[action]
+        elif action == 'os-set_bootable':
+            assert list(body[action]) == ['bootable']
+        elif action == 'os-unmanage':
+            assert body[action] is None
+        elif action == 'os-promote-replica':
+            assert body[action] is None
+        elif action == 'os-reenable-replica':
+            assert body[action] is None
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
@@ -373,13 +410,52 @@ class FakeHTTPClient(base_client.HTTPClient):
         return self.post_volumes_1234_action(body, **kw)
 
     def post_volumes(self, **kw):
-        return (202, {}, {'volume': {}})
+        size = kw['body']['volume'].get('size', 1)
+        volume = _stub_volume(id='1234', size=size)
+        return (202, {}, {'volume': volume})
 
     def delete_volumes_1234(self, **kw):
         return (202, {}, None)
 
     def delete_volumes_5678(self, **kw):
         return (202, {}, None)
+
+    #
+    # Consistencygroups
+    #
+
+    def get_consistencygroups_detail(self, **kw):
+        return (200, {}, {"consistencygroups": [
+            _stub_consistencygroup(id='1234'),
+            _stub_consistencygroup(id='4567')]})
+
+    def get_consistencygroups_1234(self, **kw):
+        return (200, {}, {'consistencygroup':
+                          _stub_consistencygroup(id='1234')})
+
+    def post_consistencygroups(self, **kw):
+        return (202, {}, {'consistencygroup': {}})
+
+    def post_consistencygroups_1234_delete(self, **kw):
+        return (202, {}, {})
+
+    #
+    # Cgsnapshots
+    #
+
+    def get_cgsnapshots_detail(self, **kw):
+        return (200, {}, {"cgsnapshots": [
+            _stub_cgsnapshot(id='1234'),
+            _stub_cgsnapshot(id='4567')]})
+
+    def get_cgsnapshots_1234(self, **kw):
+        return (200, {}, {'cgsnapshot': _stub_cgsnapshot(id='1234')})
+
+    def post_cgsnapshots(self, **kw):
+        return (202, {}, {'cgsnapshot': {}})
+
+    def delete_cgsnapshots_1234(self, **kw):
+        return (202, {}, {})
 
     #
     # Quotas
@@ -411,6 +487,12 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'volumes': 2,
                           'snapshots': 2,
                           'gigabytes': 1}})
+
+    def delete_os_quota_sets_1234(self, **kw):
+        return (200, {}, {})
+
+    def delete_os_quota_sets_test(self, **kw):
+        return (200, {}, {})
 
     #
     # Quota Classes
@@ -478,13 +560,13 @@ class FakeHTTPClient(base_client.HTTPClient):
     def get_types_1_encryption(self, **kw):
         return (200, {}, {'id': 1, 'volume_type_id': 1, 'provider': 'test',
                           'cipher': 'test', 'key_size': 1,
-                          'control_location': 'front'})
+                          'control_location': 'front-end'})
 
     def get_types_2_encryption(self, **kw):
         return (200, {}, {})
 
     def post_types_2_encryption(self, body, **kw):
-        return (200, {}, {'encryption': {}})
+        return (200, {}, {'encryption': body})
 
     def put_types_1_encryption_1(self, body, **kw):
         return (200, {}, {})
@@ -571,6 +653,27 @@ class FakeHTTPClient(base_client.HTTPClient):
     def post_backups_1234_restore(self, **kw):
         return (200, {},
                 {'restore': _stub_restore()})
+
+    def get_backups_76a17945_3c6f_435c_975b_b5685db10b62_export_record(self,
+                                                                       **kw):
+        return (200,
+                {},
+                {'backup-record': {'backup_service': 'fake-backup-service',
+                                   'backup_url': 'fake-backup-url'}})
+
+    def get_backups_1234_export_record(self, **kw):
+        return (200,
+                {},
+                {'backup-record': {'backup_service': 'fake-backup-service',
+                                   'backup_url': 'fake-backup-url'}})
+
+    def post_backups_import_record(self, **kw):
+        base_uri = 'http://localhost:8776'
+        tenant_id = '0fa851f6668144cf9cd8c8419c1646c1'
+        backup1 = '76a17945-3c6f-435c-975b-b5685db10b62'
+        return (200,
+                {},
+                {'backup': _stub_backup(backup1, base_uri, tenant_id)})
 
     #
     # QoSSpecs
@@ -720,6 +823,11 @@ class FakeHTTPClient(base_client.HTTPClient):
         return (200, {}, {'host': body['host'], 'binary': body['binary'],
                 'status': 'disabled'})
 
+    def put_os_services_disable_log_reason(self, body, **kw):
+        return (200, {}, {'host': body['host'], 'binary': body['binary'],
+                'status': 'disabled',
+                'disabled_reason': body['disabled_reason']})
+
     def get_os_availability_zone(self, **kw):
         return (200, {}, {
             "availabilityZoneInfo": [
@@ -789,3 +897,14 @@ class FakeHTTPClient(base_client.HTTPClient):
 
     def put_snapshots_1234_metadata(self, **kw):
         return (200, {}, {"metadata": {"key1": "val1", "key2": "val2"}})
+
+    def post_os_volume_manage(self, **kw):
+        volume = _stub_volume(id='1234')
+        volume.update(kw['body']['volume'])
+        return (202, {}, {'volume': volume})
+
+    def post_os_promote_replica_1234(self, **kw):
+        return (202, {}, {})
+
+    def post_os_reenable_replica_1234(self, **kw):
+        return (202, {}, {})

@@ -24,7 +24,14 @@ fake_response = utils.TestResponse({
     "status_code": 200,
     "text": '{"hi": "there"}',
 })
+
+fake_response_empty = utils.TestResponse({
+    "status_code": 200,
+    "text": '{"access": {}}'
+})
+
 mock_request = mock.Mock(return_value=(fake_response))
+mock_request_empty = mock.Mock(return_value=(fake_response_empty))
 
 bad_400_response = utils.TestResponse({
     "status_code": 400,
@@ -43,6 +50,9 @@ bad_500_response = utils.TestResponse({
     "text": '{"error": {"message": "FAILED!", "details": "DETAILS!"}}',
 })
 bad_500_request = mock.Mock(return_value=(bad_500_response))
+
+connection_error_request = mock.Mock(
+    side_effect=requests.exceptions.ConnectionError)
 
 
 def get_client(retries=0):
@@ -77,7 +87,7 @@ class ClientTest(utils.TestCase):
                 headers=headers,
                 **self.TEST_REQUEST_BASE)
             # Automatic JSON parsing
-            self.assertEqual(body, {"hi": "there"})
+            self.assertEqual({"hi": "there"}, body)
 
         test_get_call()
 
@@ -101,12 +111,29 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         test_get_call()
-        self.assertEqual(self.requests, [])
+        self.assertEqual([], self.requests)
 
     def test_get_retry_500(self):
         cl = get_authed_client(retries=1)
 
         self.requests = [bad_500_request, mock_request]
+
+        def request(*args, **kwargs):
+            next_request = self.requests.pop(0)
+            return next_request(*args, **kwargs)
+
+        @mock.patch.object(requests, "request", request)
+        @mock.patch('time.time', mock.Mock(return_value=1234))
+        def test_get_call():
+            resp, body = cl.get("/hi")
+
+        test_get_call()
+        self.assertEqual([], self.requests)
+
+    def test_get_retry_connection_error(self):
+        cl = get_authed_client(retries=1)
+
+        self.requests = [connection_error_request, mock_request]
 
         def request(*args, **kwargs):
             next_request = self.requests.pop(0)
@@ -135,7 +162,7 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         self.assertRaises(exceptions.ClientException, test_get_call)
-        self.assertEqual(self.requests, [mock_request])
+        self.assertEqual([mock_request], self.requests)
 
     def test_get_no_retry_400(self):
         cl = get_authed_client(retries=0)
@@ -152,7 +179,7 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         self.assertRaises(exceptions.BadRequest, test_get_call)
-        self.assertEqual(self.requests, [mock_request])
+        self.assertEqual([mock_request], self.requests)
 
     def test_get_retry_400_socket(self):
         cl = get_authed_client(retries=1)
@@ -169,7 +196,7 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         test_get_call()
-        self.assertEqual(self.requests, [])
+        self.assertEqual([], self.requests)
 
     def test_post(self):
         cl = get_authed_client()
@@ -197,8 +224,20 @@ class ClientTest(utils.TestCase):
         cl = get_client()
 
         # response must not have x-server-management-url header
+        @mock.patch.object(requests, "request", mock_request_empty)
+        def test_auth_call():
+            self.assertRaises(exceptions.AuthorizationFailure,
+                              cl.authenticate)
+
+        test_auth_call()
+
+    def test_auth_not_implemented(self):
+        cl = get_client()
+
+        # response must not have x-server-management-url header
+        # {'hi': 'there'} is neither V2 or V3
         @mock.patch.object(requests, "request", mock_request)
         def test_auth_call():
-            self.assertRaises(exceptions.AuthorizationFailure, cl.authenticate)
+            self.assertRaises(NotImplementedError, cl.authenticate)
 
         test_auth_call()

@@ -101,13 +101,13 @@ class VolumeTypeManager(base.ManagerWithFind):
         """
         Delete a specific volume_type.
 
-        :param volume_type: The ID of the :class:`VolumeType` to get.
+        :param volume_type: The name or ID of the :class:`VolumeType` to get.
         """
         self._delete("/types/%s" % base.getid(volume_type))
 
     def create(self, name):
         """
-        Create a volume type.
+        Creates a volume type.
 
         :param name: Descriptive name of the volume type
         :rtype: :class:`VolumeType`

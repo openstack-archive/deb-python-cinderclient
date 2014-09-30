@@ -28,7 +28,7 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
         resp = {
             "access": {
                 "token": {
-                    "expires": "12345",
+                    "expires": "2014-11-01T03:32:15-05:00",
                     "id": "FAKE_ID",
                 },
                 "serviceCatalog": [
@@ -82,9 +82,9 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
 
             endpoints = resp["access"]["serviceCatalog"][0]['endpoints']
             public_url = endpoints[0]["publicURL"].rstrip('/')
-            self.assertEqual(cs.client.management_url, public_url)
+            self.assertEqual(public_url, cs.client.management_url)
             token_id = resp["access"]["token"]["id"]
-            self.assertEqual(cs.client.auth_token, token_id)
+            self.assertEqual(token_id, cs.client.auth_token)
 
         test_auth_call()
 
@@ -95,7 +95,7 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
         resp = {
             "access": {
                 "token": {
-                    "expires": "12345",
+                    "expires": "2014-11-01T03:32:15-05:00",
                     "id": "FAKE_ID",
                     "tenant": {
                         "description": None,
@@ -155,11 +155,11 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
 
             endpoints = resp["access"]["serviceCatalog"][0]['endpoints']
             public_url = endpoints[0]["publicURL"].rstrip('/')
-            self.assertEqual(cs.client.management_url, public_url)
+            self.assertEqual(public_url, cs.client.management_url)
             token_id = resp["access"]["token"]["id"]
-            self.assertEqual(cs.client.auth_token, token_id)
+            self.assertEqual(token_id, cs.client.auth_token)
             tenant_id = resp["access"]["token"]["tenant"]["id"]
-            self.assertEqual(cs.client.tenant_id, tenant_id)
+            self.assertEqual(tenant_id, cs.client.tenant_id)
 
         test_auth_call()
 
@@ -186,7 +186,7 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
         dict_correct_response = {
             "access": {
                 "token": {
-                    "expires": "12345",
+                    "expires": "2014-11-01T03:32:15-05:00",
                     "id": "FAKE_ID",
                 },
                 "serviceCatalog": [
@@ -258,59 +258,9 @@ class AuthenticateAgainstKeystoneTests(utils.TestCase):
             resp = dict_correct_response
             endpoints = resp["access"]["serviceCatalog"][0]['endpoints']
             public_url = endpoints[0]["publicURL"].rstrip('/')
-            self.assertEqual(cs.client.management_url, public_url)
+            self.assertEqual(public_url, cs.client.management_url)
             token_id = resp["access"]["token"]["id"]
-            self.assertEqual(cs.client.auth_token, token_id)
-
-        test_auth_call()
-
-    def test_ambiguous_endpoints(self):
-        cs = client.Client("username", "password", "project_id",
-                           "http://localhost:8776/v1", service_type='volume')
-        resp = {
-            "access": {
-                "token": {
-                    "expires": "12345",
-                    "id": "FAKE_ID",
-                },
-                "serviceCatalog": [
-                    {
-                        "adminURL": "http://localhost:8776/v1",
-                        "type": "volume",
-                        "name": "Cinder Volume Service",
-                        "endpoints": [
-                            {
-                                "region": "RegionOne",
-                                "internalURL": "http://localhost:8776/v1",
-                                "publicURL": "http://localhost:8776/v1",
-                            },
-                        ],
-                    },
-                    {
-                        "adminURL": "http://localhost:8776/v1",
-                        "type": "volume",
-                        "name": "Cinder Volume Cloud Service",
-                        "endpoints": [
-                            {
-                                "internalURL": "http://localhost:8776/v1",
-                                "publicURL": "http://localhost:8776/v1",
-                            },
-                        ],
-                    },
-                ],
-            },
-        }
-        auth_response = utils.TestResponse({
-            "status_code": 200,
-            "text": json.dumps(resp),
-        })
-
-        mock_request = mock.Mock(return_value=(auth_response))
-
-        @mock.patch.object(requests, "request", mock_request)
-        def test_auth_call():
-            self.assertRaises(exceptions.AmbiguousEndpoints,
-                              cs.client.authenticate)
+            self.assertEqual(token_id, cs.client.auth_token)
 
         test_auth_call()
 
@@ -344,10 +294,10 @@ class AuthenticationTests(utils.TestCase):
                 headers=headers,
                 **self.TEST_REQUEST_BASE)
 
-            self.assertEqual(cs.client.management_url,
-                             auth_response.headers['x-server-management-url'])
-            self.assertEqual(cs.client.auth_token,
-                             auth_response.headers['x-auth-token'])
+            self.assertEqual(auth_response.headers['x-server-management-url'],
+                             cs.client.management_url)
+            self.assertEqual(auth_response.headers['x-auth-token'],
+                             cs.client.auth_token)
 
         test_auth_call()
 

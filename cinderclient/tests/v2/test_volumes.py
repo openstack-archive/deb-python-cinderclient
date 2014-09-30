@@ -23,6 +23,22 @@ cs = fakes.FakeClient()
 
 class VolumesTest(utils.TestCase):
 
+    def test_list_volumes_with_marker_limit(self):
+        cs.volumes.list(marker=1234, limit=2)
+        cs.assert_called('GET', '/volumes/detail?limit=2&marker=1234')
+
+    def test_list_volumes_with_sort_key_dir(self):
+        cs.volumes.list(sort_key='id', sort_dir='asc')
+        cs.assert_called('GET', '/volumes/detail?sort_dir=asc&sort_key=id')
+
+    def test_list_volumes_with_invalid_sort_key(self):
+        self.assertRaises(ValueError,
+                          cs.volumes.list, sort_key='invalid', sort_dir='asc')
+
+    def test_list_volumes_with_invalid_sort_dir(self):
+        self.assertRaises(ValueError,
+                          cs.volumes.list, sort_key='id', sort_dir='invalid')
+
     def test_delete_volume(self):
         v = cs.volumes.list()[0]
         v.delete()
@@ -35,6 +51,26 @@ class VolumesTest(utils.TestCase):
     def test_create_volume(self):
         cs.volumes.create(1)
         cs.assert_called('POST', '/volumes')
+
+    def test_create_volume_with_hint(self):
+        cs.volumes.create(1, scheduler_hints='uuid')
+        expected = {'volume': {'status': 'creating',
+                               'description': None,
+                               'availability_zone': None,
+                               'source_volid': None,
+                               'snapshot_id': None,
+                               'size': 1,
+                               'user_id': None,
+                               'name': None,
+                               'imageRef': None,
+                               'attach_status': 'detached',
+                               'volume_type': None,
+                               'project_id': None,
+                               'metadata': {},
+                               'source_replica': None,
+                               'consistencygroup_id': None},
+                    'OS-SCH-HNT:scheduler_hints': 'uuid'}
+        cs.assert_called('POST', '/volumes', body=expected)
 
     def test_attach(self):
         v = cs.volumes.get('1234')
@@ -116,3 +152,27 @@ class VolumesTest(utils.TestCase):
         cs.assert_called('POST', '/volumes/1234/action',
                          {'os-retype': {'new_type': 'foo',
                                         'migration_policy': 'on-demand'}})
+
+    def test_set_bootable(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.set_bootable(v, True)
+        cs.assert_called('POST', '/volumes/1234/action')
+
+    def test_volume_manage(self):
+        cs.volumes.manage('host1', {'k': 'v'})
+        expected = {'host': 'host1', 'name': None, 'availability_zone': None,
+                    'description': None, 'metadata': None, 'ref': {'k': 'v'},
+                    'volume_type': None, 'bootable': False}
+        cs.assert_called('POST', '/os-volume-manage', {'volume': expected})
+
+    def test_volume_manage_bootable(self):
+        cs.volumes.manage('host1', {'k': 'v'}, bootable=True)
+        expected = {'host': 'host1', 'name': None, 'availability_zone': None,
+                    'description': None, 'metadata': None, 'ref': {'k': 'v'},
+                    'volume_type': None, 'bootable': True}
+        cs.assert_called('POST', '/os-volume-manage', {'volume': expected})
+
+    def test_volume_unmanage(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.unmanage(v)
+        cs.assert_called('POST', '/volumes/1234/action', {'os-unmanage': None})

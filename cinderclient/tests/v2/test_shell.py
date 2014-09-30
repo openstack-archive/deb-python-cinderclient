@@ -14,11 +14,14 @@
 #    under the License.
 
 import fixtures
+from requests_mock.contrib import fixture as requests_mock_fixture
 
 from cinderclient import client
+from cinderclient import exceptions
 from cinderclient import shell
 from cinderclient.tests import utils
 from cinderclient.tests.v2 import fakes
+from cinderclient.tests.fixture_data import keystone_client
 
 
 class ShellTest(utils.TestCase):
@@ -28,7 +31,7 @@ class ShellTest(utils.TestCase):
         'CINDER_PASSWORD': 'password',
         'CINDER_PROJECT_ID': 'project_id',
         'OS_VOLUME_API_VERSION': '2',
-        'CINDER_URL': 'http://no.where',
+        'CINDER_URL': keystone_client.BASE_URL,
     }
 
     # Patch os.environ to avoid required auth info.
@@ -41,9 +44,14 @@ class ShellTest(utils.TestCase):
 
         self.shell = shell.OpenStackCinderShell()
 
-        #HACK(bcwaldon): replace this when we start using stubs
+        # HACK(bcwaldon): replace this when we start using stubs
         self.old_get_client_class = client.get_client_class
         client.get_client_class = lambda *_: fakes.FakeClient
+
+        self.requests = self.useFixture(requests_mock_fixture.Fixture())
+        self.requests.register_uri(
+            'GET', keystone_client.BASE_URL,
+            text=keystone_client.keystone_request_callback)
 
     def tearDown(self):
         # For some method like test_image_meta_bad_action we are
@@ -53,18 +61,22 @@ class ShellTest(utils.TestCase):
         if hasattr(self.shell, 'cs'):
             self.shell.cs.clear_callstack()
 
-        #HACK(bcwaldon): replace this when we start using stubs
+        # HACK(bcwaldon): replace this when we start using stubs
         client.get_client_class = self.old_get_client_class
         super(ShellTest, self).tearDown()
 
     def run_command(self, cmd):
         self.shell.main(cmd.split())
 
-    def assert_called(self, method, url, body=None, **kwargs):
-        return self.shell.cs.assert_called(method, url, body, **kwargs)
+    def assert_called(self, method, url, body=None,
+                      partial_body=None, **kwargs):
+        return self.shell.cs.assert_called(method, url, body,
+                                           partial_body, **kwargs)
 
-    def assert_called_anytime(self, method, url, body=None):
-        return self.shell.cs.assert_called_anytime(method, url, body)
+    def assert_called_anytime(self, method, url, body=None,
+                              partial_body=None):
+        return self.shell.cs.assert_called_anytime(method, url, body,
+                                                   partial_body)
 
     def test_list(self):
         self.run_command('list')
@@ -83,9 +95,58 @@ class ShellTest(utils.TestCase):
         self.run_command('list --all-tenants=1')
         self.assert_called('GET', '/volumes/detail?all_tenants=1')
 
+    def test_list_marker(self):
+        self.run_command('list --marker=1234')
+        self.assert_called('GET', '/volumes/detail?marker=1234')
+
+    def test_list_limit(self):
+        self.run_command('list --limit=10')
+        self.assert_called('GET', '/volumes/detail?limit=10')
+
+    def test_list_sort(self):
+        self.run_command('list --sort_key=name --sort_dir=asc')
+        self.assert_called('GET', '/volumes/detail?sort_dir=asc&sort_key=name')
+
     def test_list_availability_zone(self):
         self.run_command('availability-zone-list')
         self.assert_called('GET', '/os-availability-zone')
+
+    def test_create_volume_from_snapshot(self):
+        expected = {'volume': {'size': None}}
+
+        expected['volume']['snapshot_id'] = '1234'
+        self.run_command('create --snapshot-id=1234')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
+        expected['volume']['size'] = 2
+        self.run_command('create --snapshot-id=1234 2')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
+    def test_create_volume_from_volume(self):
+        expected = {'volume': {'size': None}}
+
+        expected['volume']['source_volid'] = '1234'
+        self.run_command('create --source-volid=1234')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
+        expected['volume']['size'] = 2
+        self.run_command('create --source-volid=1234 2')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
+    def test_create_volume_from_replica(self):
+        expected = {'volume': {'size': None}}
+
+        expected['volume']['source_replica'] = '1234'
+        self.run_command('create --source-replica=1234')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
+    def test_create_size_required_if_not_snapshot_or_clone(self):
+        self.assertRaises(SystemExit, self.run_command, 'create')
 
     def test_show(self):
         self.run_command('show 1234')
@@ -112,6 +173,16 @@ class ShellTest(utils.TestCase):
     def test_restore(self):
         self.run_command('backup-restore 1234')
         self.assert_called('POST', '/backups/1234/restore')
+
+    def test_record_export(self):
+        self.run_command('backup-export 1234')
+        self.assert_called('GET', '/backups/1234/export_record')
+
+    def test_record_import(self):
+        self.run_command('backup-import fake.driver URL_STRING')
+        expected = {'backup-record': {'backup_service': 'fake.driver',
+                                      'backup_url': 'URL_STRING'}}
+        self.assert_called('POST', '/backups/import_record', expected)
 
     def test_snapshot_list_filter_volume_id(self):
         self.run_command('snapshot-list --volume-id=1234')
@@ -198,6 +269,17 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('POST', '/volumes/5678/action',
                                    body=expected)
 
+    def test_reset_state_two_with_one_nonexistent(self):
+        cmd = 'reset-state 1234 123456789'
+        self.assertRaises(exceptions.CommandError, self.run_command, cmd)
+        expected = {'os-reset_status': {'status': 'available'}}
+        self.assert_called_anytime('POST', '/volumes/1234/action',
+                                   body=expected)
+
+    def test_reset_state_one_with_one_nonexistent(self):
+        cmd = 'reset-state 123456789'
+        self.assertRaises(exceptions.CommandError, self.run_command, cmd)
+
     def test_snapshot_reset_state(self):
         self.run_command('snapshot-reset-state 1234')
         expected = {'os-reset_status': {'status': 'available'}}
@@ -249,9 +331,10 @@ class ShellTest(utils.TestCase):
         - one GET request to retrieve the relevant volume type information
         - one POST request to create the new encryption type
         """
+
         expected = {'encryption': {'cipher': None, 'key_size': None,
                                    'provider': 'TestProvider',
-                                   'control_location': None}}
+                                   'control_location': 'front-end'}}
         self.run_command('encryption-type-create 2 TestProvider')
         self.assert_called('POST', '/types/2/encryption', body=expected)
         self.assert_called_anytime('GET', '/types/2')
@@ -325,6 +408,13 @@ class ShellTest(utils.TestCase):
         self.assert_called('PUT', '/os-services/disable',
                            {"binary": "cinder-volume", "host": "host"})
 
+    def test_services_disable_with_reason(self):
+        cmd = 'service-disable host cinder-volume --reason no_reason'
+        self.run_command(cmd)
+        body = {'host': 'host', 'binary': 'cinder-volume',
+                'disabled_reason': 'no_reason'}
+        self.assert_called('PUT', '/os-services/disable-log-reason', body)
+
     def test_service_enable(self):
         self.run_command('service-enable host cinder-volume')
         self.assert_called('PUT', '/os-services/enable',
@@ -345,3 +435,108 @@ class ShellTest(utils.TestCase):
     def test_snapshot_delete(self):
         self.run_command('snapshot-delete 1234')
         self.assert_called('DELETE', '/snapshots/1234')
+
+    def test_quota_delete(self):
+        self.run_command('quota-delete 1234')
+        self.assert_called('DELETE', '/os-quota-sets/1234')
+
+    def test_snapshot_delete_multiple(self):
+        self.run_command('snapshot-delete 5678')
+        self.assert_called('DELETE', '/snapshots/5678')
+
+    def test_volume_manage(self):
+        self.run_command('manage host1 key1=val1 key2=val2 '
+                         '--name foo --description bar '
+                         '--volume-type baz --availability-zone az '
+                         '--metadata k1=v1 k2=v2')
+        expected = {'volume': {'host': 'host1',
+                               'ref': {'key1': 'val1', 'key2': 'val2'},
+                               'name': 'foo',
+                               'description': 'bar',
+                               'volume_type': 'baz',
+                               'availability_zone': 'az',
+                               'metadata': {'k1': 'v1', 'k2': 'v2'},
+                               'bootable': False}}
+        self.assert_called_anytime('POST', '/os-volume-manage', body=expected)
+
+    def test_volume_manage_bootable(self):
+        """
+        Tests the --bootable option
+
+        If this flag is specified, then the resulting POST should contain
+        bootable: True.
+        """
+        self.run_command('manage host1 key1=val1 key2=val2 '
+                         '--name foo --description bar --bootable '
+                         '--volume-type baz --availability-zone az '
+                         '--metadata k1=v1 k2=v2')
+        expected = {'volume': {'host': 'host1',
+                               'ref': {'key1': 'val1', 'key2': 'val2'},
+                               'name': 'foo',
+                               'description': 'bar',
+                               'volume_type': 'baz',
+                               'availability_zone': 'az',
+                               'metadata': {'k1': 'v1', 'k2': 'v2'},
+                               'bootable': True}}
+        self.assert_called_anytime('POST', '/os-volume-manage', body=expected)
+
+    def test_volume_manage_source_name(self):
+        """
+        Tests the --source-name option.
+
+        Checks that the --source-name option correctly updates the
+        ref structure that is passed in the HTTP POST
+        """
+        self.run_command('manage host1 key1=val1 key2=val2 '
+                         '--source-name VolName '
+                         '--name foo --description bar '
+                         '--volume-type baz --availability-zone az '
+                         '--metadata k1=v1 k2=v2')
+        expected = {'volume': {'host': 'host1',
+                               'ref': {'source-name': 'VolName',
+                                       'key1': 'val1', 'key2': 'val2'},
+                               'name': 'foo',
+                               'description': 'bar',
+                               'volume_type': 'baz',
+                               'availability_zone': 'az',
+                               'metadata': {'k1': 'v1', 'k2': 'v2'},
+                               'bootable': False}}
+        self.assert_called_anytime('POST', '/os-volume-manage', body=expected)
+
+    def test_volume_manage_source_id(self):
+        """
+        Tests the --source-id option.
+
+        Checks that the --source-id option correctly updates the
+        ref structure that is passed in the HTTP POST
+        """
+        self.run_command('manage host1 key1=val1 key2=val2 '
+                         '--source-id 1234 '
+                         '--name foo --description bar '
+                         '--volume-type baz --availability-zone az '
+                         '--metadata k1=v1 k2=v2')
+        expected = {'volume': {'host': 'host1',
+                               'ref': {'source-id': '1234',
+                                       'key1': 'val1', 'key2': 'val2'},
+                               'name': 'foo',
+                               'description': 'bar',
+                               'volume_type': 'baz',
+                               'availability_zone': 'az',
+                               'metadata': {'k1': 'v1', 'k2': 'v2'},
+                               'bootable': False}}
+        self.assert_called_anytime('POST', '/os-volume-manage', body=expected)
+
+    def test_volume_unmanage(self):
+        self.run_command('unmanage 1234')
+        self.assert_called('POST', '/volumes/1234/action',
+                           body={'os-unmanage': None})
+
+    def test_replication_promote(self):
+        self.run_command('replication-promote 1234')
+        self.assert_called('POST', '/volumes/1234/action',
+                           body={'os-promote-replica': None})
+
+    def test_replication_reenable(self):
+        self.run_command('replication-reenable 1234')
+        self.assert_called('POST', '/volumes/1234/action',
+                           body={'os-reenable-replica': None})

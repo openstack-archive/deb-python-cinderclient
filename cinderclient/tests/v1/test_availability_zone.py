@@ -18,26 +18,27 @@ import six
 
 from cinderclient.v1 import availability_zones
 from cinderclient.v1 import shell
+from cinderclient.tests.fixture_data import client
+from cinderclient.tests.fixture_data import availability_zones as azfixture
 from cinderclient.tests import utils
-from cinderclient.tests.v1 import fakes
 
 
-cs = fakes.FakeClient()
+class AvailabilityZoneTest(utils.FixturedTestCase):
 
-
-class AvailabilityZoneTest(utils.TestCase):
+    client_fixture_class = client.V1
+    data_fixture_class = azfixture.Fixture
 
     def _assertZone(self, zone, name, status):
-        self.assertEqual(zone.zoneName, name)
-        self.assertEqual(zone.zoneState, status)
+        self.assertEqual(name, zone.zoneName)
+        self.assertEqual(status, zone.zoneState)
 
     def test_list_availability_zone(self):
-        zones = cs.availability_zones.list(detailed=False)
-        cs.assert_called('GET', '/os-availability-zone')
+        zones = self.cs.availability_zones.list(detailed=False)
+        self.assert_called('GET', '/os-availability-zone')
 
         for zone in zones:
-            self.assertTrue(isinstance(zone,
-                                       availability_zones.AvailabilityZone))
+            self.assertIsInstance(zone,
+                                  availability_zones.AvailabilityZone)
 
         self.assertEqual(2, len(zones))
 
@@ -47,18 +48,18 @@ class AvailabilityZoneTest(utils.TestCase):
         z0 = shell._treeizeAvailabilityZone(zones[0])
         z1 = shell._treeizeAvailabilityZone(zones[1])
 
-        self.assertEqual((len(z0), len(z1)), (1, 1))
+        self.assertEqual((1, 1), (len(z0), len(z1)))
 
         self._assertZone(z0[0], l0[0], l0[1])
         self._assertZone(z1[0], l1[0], l1[1])
 
     def test_detail_availability_zone(self):
-        zones = cs.availability_zones.list(detailed=True)
-        cs.assert_called('GET', '/os-availability-zone/detail')
+        zones = self.cs.availability_zones.list(detailed=True)
+        self.assert_called('GET', '/os-availability-zone/detail')
 
         for zone in zones:
-            self.assertTrue(isinstance(zone,
-                                       availability_zones.AvailabilityZone))
+            self.assertIsInstance(zone,
+                                  availability_zones.AvailabilityZone)
 
         self.assertEqual(3, len(zones))
 
@@ -76,7 +77,7 @@ class AvailabilityZoneTest(utils.TestCase):
         z1 = shell._treeizeAvailabilityZone(zones[1])
         z2 = shell._treeizeAvailabilityZone(zones[2])
 
-        self.assertEqual((len(z0), len(z1), len(z2)), (3, 3, 1))
+        self.assertEqual((3, 3, 1), (len(z0), len(z1), len(z2)))
 
         self._assertZone(z0[0], l0[0], l0[1])
         self._assertZone(z0[1], l1[0], l1[1])

@@ -16,12 +16,15 @@
 #    under the License.
 
 import fixtures
+from requests_mock.contrib import fixture as requests_mock_fixture
 
 from cinderclient import client
+from cinderclient import exceptions
 from cinderclient import shell
 from cinderclient.v1 import shell as shell_v1
 from cinderclient.tests.v1 import fakes
 from cinderclient.tests import utils
+from cinderclient.tests.fixture_data import keystone_client
 
 
 class ShellTest(utils.TestCase):
@@ -31,7 +34,7 @@ class ShellTest(utils.TestCase):
         'CINDER_PASSWORD': 'password',
         'CINDER_PROJECT_ID': 'project_id',
         'OS_VOLUME_API_VERSION': '1',
-        'CINDER_URL': 'http://no.where',
+        'CINDER_URL': keystone_client.BASE_URL,
     }
 
     # Patch os.environ to avoid required auth info.
@@ -44,9 +47,14 @@ class ShellTest(utils.TestCase):
 
         self.shell = shell.OpenStackCinderShell()
 
-        #HACK(bcwaldon): replace this when we start using stubs
+        # HACK(bcwaldon): replace this when we start using stubs
         self.old_get_client_class = client.get_client_class
         client.get_client_class = lambda *_: fakes.FakeClient
+
+        self.requests = self.useFixture(requests_mock_fixture.Fixture())
+        self.requests.register_uri(
+            'GET', keystone_client.BASE_URL,
+            text=keystone_client.keystone_request_callback)
 
     def tearDown(self):
         # For some method like test_image_meta_bad_action we are
@@ -56,7 +64,7 @@ class ShellTest(utils.TestCase):
         if hasattr(self.shell, 'cs'):
             self.shell.cs.clear_callstack()
 
-        #HACK(bcwaldon): replace this when we start using stubs
+        # HACK(bcwaldon): replace this when we start using stubs
         client.get_client_class = self.old_get_client_class
         super(ShellTest, self).tearDown()
 
@@ -72,6 +80,7 @@ class ShellTest(utils.TestCase):
     def test_extract_metadata(self):
         # mimic the result of argparse's parse_args() method
         class Arguments:
+
             def __init__(self, metadata=[]):
                 self.metadata = metadata
 
@@ -86,7 +95,17 @@ class ShellTest(utils.TestCase):
 
         for input in inputs:
             args = Arguments(metadata=input[0])
-            self.assertEqual(shell_v1._extract_metadata(args), input[1])
+            self.assertEqual(input[1], shell_v1._extract_metadata(args))
+
+    def test_translate_volume_keys(self):
+        cs = fakes.FakeClient()
+        v = cs.volumes.list()[0]
+        setattr(v, 'os-vol-tenant-attr:tenant_id', 'fake_tenant')
+        setattr(v, '_info', {'attachments': [{'server_id': 1234}],
+                'id': 1234, 'name': 'sample-volume',
+                'os-vol-tenant-attr:tenant_id': 'fake_tenant'})
+        shell_v1._translate_volume_keys([v])
+        self.assertEqual(v.tenant_id, 'fake_tenant')
 
     def test_list(self):
         self.run_command('list')
@@ -220,6 +239,17 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('POST', '/volumes/5678/action',
                                    body=expected)
 
+    def test_reset_state_two_with_one_nonexistent(self):
+        cmd = 'reset-state 1234 123456789'
+        self.assertRaises(exceptions.CommandError, self.run_command, cmd)
+        expected = {'os-reset_status': {'status': 'available'}}
+        self.assert_called_anytime('POST', '/volumes/1234/action',
+                                   body=expected)
+
+    def test_reset_state_one_with_one_nonexistent(self):
+        cmd = 'reset-state 123456789'
+        self.assertRaises(exceptions.CommandError, self.run_command, cmd)
+
     def test_snapshot_reset_state(self):
         self.run_command('snapshot-reset-state 1234')
         expected = {'os-reset_status': {'status': 'available'}}
@@ -273,7 +303,7 @@ class ShellTest(utils.TestCase):
         """
         expected = {'encryption': {'cipher': None, 'key_size': None,
                                    'provider': 'TestProvider',
-                                   'control_location': None}}
+                                   'control_location': 'front-end'}}
         self.run_command('encryption-type-create 2 TestProvider')
         self.assert_called('POST', '/types/2/encryption', body=expected)
         self.assert_called_anytime('GET', '/types/2')
@@ -347,7 +377,14 @@ class ShellTest(utils.TestCase):
         self.assert_called('PUT', '/os-services/disable',
                            {"binary": "cinder-volume", "host": "host"})
 
-    def test_service_disable(self):
+    def test_services_disable_with_reason(self):
+        cmd = 'service-disable host cinder-volume --reason no_reason'
+        self.run_command(cmd)
+        body = {'host': 'host', 'binary': 'cinder-volume',
+                'disabled_reason': 'no_reason'}
+        self.assert_called('PUT', '/os-services/disable-log-reason', body)
+
+    def test_service_enable(self):
         self.run_command('service-enable host cinder-volume')
         self.assert_called('PUT', '/os-services/enable',
                            {"binary": "cinder-volume", "host": "host"})
@@ -355,3 +392,11 @@ class ShellTest(utils.TestCase):
     def test_snapshot_delete(self):
         self.run_command('snapshot-delete 1234')
         self.assert_called('DELETE', '/snapshots/1234')
+
+    def test_quota_delete(self):
+        self.run_command('quota-delete 1234')
+        self.assert_called('DELETE', '/os-quota-sets/1234')
+
+    def test_snapshot_delete_multiple(self):
+        self.run_command('snapshot-delete 1234 5678')
+        self.assert_called('DELETE', '/snapshots/5678')
