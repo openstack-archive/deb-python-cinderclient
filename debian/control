@@ -26,7 +26,7 @@ Build-Depends-Indep: python-babel,
                      python-unittest2,
                      subunit,
                      testrepository,
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
 Homepage: https://github.com/openstack/python-cinderclient
