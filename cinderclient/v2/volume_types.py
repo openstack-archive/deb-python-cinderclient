@@ -24,6 +24,13 @@ class VolumeType(base.Resource):
     def __repr__(self):
         return "<VolumeType: %s>" % self.name
 
+    @property
+    def is_public(self):
+        """
+        Provide a user-friendly accessor to os-volume-type-access:is_public
+        """
+        return self._info.get("os-volume-type-access:is_public", 'N/A')
+
     def get_keys(self):
         """Get extra specs from a volume type.
 
@@ -70,12 +77,15 @@ class VolumeTypeManager(base.ManagerWithFind):
     """Manage :class:`VolumeType` resources."""
     resource_class = VolumeType
 
-    def list(self, search_opts=None):
+    def list(self, search_opts=None, is_public=True):
         """Lists all volume types.
 
         :rtype: list of :class:`VolumeType`.
         """
-        return self._list("/types", "volume_types")
+        query_string = ''
+        if not is_public:
+            query_string = '?is_public=%s' % is_public
+        return self._list("/types%s" % (query_string), "volume_types")
 
     def get(self, volume_type):
         """Get a specific volume type.
@@ -85,6 +95,13 @@ class VolumeTypeManager(base.ManagerWithFind):
         """
         return self._get("/types/%s" % base.getid(volume_type), "volume_type")
 
+    def default(self):
+        """Get the default volume type.
+
+        :rtype: :class:`VolumeType`
+        """
+        return self._get("/types/default", "volume_type")
+
     def delete(self, volume_type):
         """Deletes a specific volume_type.
 
@@ -92,17 +109,40 @@ class VolumeTypeManager(base.ManagerWithFind):
         """
         self._delete("/types/%s" % base.getid(volume_type))
 
-    def create(self, name):
+    def create(self, name, description=None, is_public=True):
         """Creates a volume type.
 
         :param name: Descriptive name of the volume type
+        :param description: Description of the the volume type
+        :param is_public: Volume type visibility
         :rtype: :class:`VolumeType`
         """
 
         body = {
             "volume_type": {
                 "name": name,
+                "description": description,
+                "os-volume-type-access:is_public": is_public,
             }
         }
 
         return self._create("/types", body, "volume_type")
+
+    def update(self, volume_type, name=None, description=None):
+        """Update the name and/or description for a volume type.
+
+        :param volume_type: The ID of the :class:`VolumeType` to update.
+        :param name: Descriptive name of the volume type.
+        :param description: Description of the the volume type.
+        :rtype: :class:`VolumeType`
+        """
+
+        body = {
+            "volume_type": {
+                "name": name,
+                "description": description
+            }
+        }
+
+        return self._update("/types/%s" % base.getid(volume_type),
+                            body, response_key="volume_type")

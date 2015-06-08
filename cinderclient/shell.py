@@ -21,6 +21,7 @@ Command-line interface to the OpenStack Cinder API.
 from __future__ import print_function
 
 import argparse
+import getpass
 import glob
 import imp
 import itertools
@@ -36,18 +37,21 @@ from cinderclient import exceptions as exc
 from cinderclient import utils
 import cinderclient.auth_plugin
 import cinderclient.extension
+from cinderclient.openstack.common import importutils
 from cinderclient.openstack.common import strutils
 from cinderclient.openstack.common.gettextutils import _
 from cinderclient.v1 import shell as shell_v1
 from cinderclient.v2 import shell as shell_v2
 
+from keystoneclient import adapter
 from keystoneclient import discover
 from keystoneclient import session
 from keystoneclient.auth.identity import v2 as v2_auth
 from keystoneclient.auth.identity import v3 as v3_auth
-from keystoneclient.exceptions import DiscoveryFailure
+from keystoneclient import exceptions as keystoneclient_exc
 import six.moves.urllib.parse as urlparse
 
+osprofiler_profiler = importutils.try_import("osprofiler.profiler")
 
 DEFAULT_OS_VOLUME_API_VERSION = "1"
 DEFAULT_CINDER_ENDPOINT_TYPE = 'publicURL'
@@ -122,7 +126,7 @@ class OpenStackCinderShell(object):
                             action='version',
                             version=cinderclient.__version__)
 
-        parser.add_argument('--debug',
+        parser.add_argument('-d', '--debug',
                             action='store_true',
                             default=utils.env('CINDERCLIENT_DEBUG',
                                               default=False),
@@ -180,11 +184,32 @@ class OpenStackCinderShell(object):
         parser.add_argument('--os_volume_api_version',
                             help=argparse.SUPPRESS)
 
+        parser.add_argument('--bypass-url',
+                            metavar='<bypass-url>',
+                            dest='bypass_url',
+                            default=utils.env('CINDERCLIENT_BYPASS_URL'),
+                            help="Use this API endpoint instead of the "
+                            "Service Catalog. Defaults to "
+                            "env[CINDERCLIENT_BYPASS_URL]")
+        parser.add_argument('--bypass_url',
+                            help=argparse.SUPPRESS)
+
         parser.add_argument('--retries',
                             metavar='<retries>',
                             type=int,
                             default=0,
                             help='Number of retries.')
+
+        if osprofiler_profiler:
+            parser.add_argument('--profile',
+                                metavar='HMAC_KEY',
+                                help='HMAC key to use for encrypting context '
+                                'data for performance profiling of operation. '
+                                'This key needs to match the one configured '
+                                'on the cinder api server. '
+                                'Without key the profiling will not be '
+                                'triggered even if osprofiler is enabled '
+                                'on server side.')
 
         self._append_global_identity_args(parser)
 
@@ -490,13 +515,35 @@ class OpenStackCinderShell(object):
         ks_logger = logging.getLogger("keystoneclient")
         ks_logger.setLevel(logging.DEBUG)
 
-    def main(self, argv):
+    def _delimit_metadata_args(self, argv):
+        """This function adds -- separator at the appropriate spot
+        """
+        word = '--metadata'
+        tmp = []
+        # flag is true in between metadata option and next option
+        metadata_options = False
+        if word in argv:
+            for arg in argv:
+                if arg == word:
+                    metadata_options = True
+                elif metadata_options:
+                    if arg.startswith('--'):
+                        metadata_options = False
+                    elif '=' not in arg:
+                        tmp.append(u'--')
+                        metadata_options = False
+                tmp.append(arg)
+            return tmp
+        else:
+            return argv
 
+    def main(self, argv):
         # Parse args once to find version and debug settings
         parser = self.get_base_parser()
         (options, args) = parser.parse_known_args(argv)
         self.setup_debugging(options.debug)
         api_version_input = True
+        service_type_input = True
         self.options = options
 
         if not options.os_volume_api_version:
@@ -505,6 +552,8 @@ class OpenStackCinderShell(object):
             # specify a value.  Fall back to default.
             options.os_volume_api_version = DEFAULT_OS_VOLUME_API_VERSION
             api_version_input = False
+
+        version = (options.os_volume_api_version,)
 
         # build available subcommands based on version
         self.extensions = self._discover_extensions(
@@ -519,6 +568,7 @@ class OpenStackCinderShell(object):
             subcommand_parser.print_help()
             return 0
 
+        argv = self._delimit_metadata_args(argv)
         args = subcommand_parser.parse_args(argv)
         self._run_extension_hooks('__post_parse_args__', args)
 
@@ -532,16 +582,16 @@ class OpenStackCinderShell(object):
 
         (os_username, os_password, os_tenant_name, os_auth_url,
          os_region_name, os_tenant_id, endpoint_type, insecure,
-         service_type, service_name, volume_service_name,
+         service_type, service_name, volume_service_name, bypass_url,
          cacert, os_auth_system) = (
              args.os_username, args.os_password,
              args.os_tenant_name, args.os_auth_url,
              args.os_region_name, args.os_tenant_id,
              args.endpoint_type, args.insecure,
              args.service_type, args.service_name,
-             args.volume_service_name, args.os_cacert,
+             args.volume_service_name,
+             args.bypass_url, args.os_cacert,
              args.os_auth_system)
-
         if os_auth_system and os_auth_system != "keystone":
             auth_plugin = cinderclient.auth_plugin.load_plugin(os_auth_system)
         else:
@@ -553,6 +603,7 @@ class OpenStackCinderShell(object):
         if not service_type:
             service_type = DEFAULT_CINDER_SERVICE_TYPE
             service_type = utils.get_service_type(args.func) or service_type
+            service_type_input = False
 
         # FIXME(usrleon): Here should be restrict for project id same as
         # for os_username or os_password but for compatibility it is not.
@@ -568,9 +619,20 @@ class OpenStackCinderShell(object):
                                            "env[OS_USERNAME].")
 
             if not os_password:
-                raise exc.CommandError("You must provide a password "
-                                       "through --os-password or "
-                                       "env[OS_PASSWORD].")
+                # No password, If we've got a tty, try prompting for it
+                if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
+                    # Check for Ctl-D
+                    try:
+                        os_password = getpass.getpass('OS Password: ')
+                    except EOFError:
+                        pass
+                # No password because we didn't have a tty or the
+                # user Ctl-D when prompted.
+                if not os_password:
+                    raise exc.CommandError("You must provide a password "
+                                           "through --os-password, "
+                                           "env[OS_PASSWORD] "
+                                           "or, prompted response.")
 
             if not (os_tenant_name or os_tenant_id):
                 raise exc.CommandError("You must provide a tenant ID "
@@ -619,21 +681,75 @@ class OpenStackCinderShell(object):
                 "through --os-auth-url or env[OS_AUTH_URL].")
 
         auth_session = self._get_keystone_session()
+        if not service_type_input or not api_version_input:
+            # NOTE(thingee): Unfortunately the v2 shell is tied to volumev2
+            # service_type. If the service_catalog just contains service_type
+            # volume with x.x.x.x:8776 for discovery, and the user sets version
+            # 2 for the client, it'll default to volumev2 and raise
+            # EndpointNotFound. This is a workaround until we feel comfortable
+            # with removing the volumev2 assumption.
+            keystone_adapter = adapter.Adapter(auth_session)
+            try:
+                # Try just the client's defaults
+                endpoint = keystone_adapter.get_endpoint(
+                    service_type=service_type,
+                    version=version,
+                    interface='public')
 
-        self.cs = client.Client(options.os_volume_api_version, os_username,
-                                os_password, os_tenant_name, os_auth_url,
-                                insecure, region_name=os_region_name,
+                # Service was found, but wrong version. Lets try a different
+                # version, if the user did not specify one.
+                if not endpoint and not api_version_input:
+                    if version == ('1',):
+                        version = ('2',)
+                    else:
+                        version = ('1',)
+
+                    endpoint = keystone_adapter.get_endpoint(
+                        service_type=service_type, version=version,
+                        interface='public')
+
+            except keystoneclient_exc.EndpointNotFound as e:
+                # No endpoint found with that service_type, lets fall back to
+                # other service_types if the user did not specify one.
+                if not service_type_input:
+                    if service_type == 'volume':
+                        service_type = 'volumev2'
+                    else:
+                        service_type = 'volume'
+
+                try:
+                    endpoint = keystone_adapter.get_endpoint(
+                        version=version,
+                        service_type=service_type, interface='public')
+
+                    # Service was found, but wrong version. Lets try
+                    # a different version, if the user did not specify one.
+                    if not endpoint and not api_version_input:
+                        if version == ('1',):
+                            version = ('2',)
+                        else:
+                            version = ('1',)
+
+                        endpoint = keystone_adapter.get_endpoint(
+                            service_type=service_type, version=version,
+                            interface='public')
+
+                except keystoneclient_exc.EndpointNotFound:
+                    raise e
+
+        self.cs = client.Client(version[0], os_username, os_password,
+                                os_tenant_name, os_auth_url,
+                                region_name=os_region_name,
                                 tenant_id=os_tenant_id,
                                 endpoint_type=endpoint_type,
                                 extensions=self.extensions,
                                 service_type=service_type,
                                 service_name=service_name,
                                 volume_service_name=volume_service_name,
-                                retries=options.retries,
-                                http_log_debug=args.debug,
-                                cacert=cacert, auth_system=os_auth_system,
-                                auth_plugin=auth_plugin,
-                                session=auth_session)
+                                bypass_url=bypass_url, retries=options.retries,
+                                http_log_debug=args.debug, cacert=cacert,
+                                auth_system=os_auth_system,
+                                auth_plugin=auth_plugin, session=auth_session)
 
         try:
             if not utils.isunauthenticated(args.func):
@@ -651,7 +767,8 @@ class OpenStackCinderShell(object):
         try:
             endpoint_api_version = \
                 self.cs.get_volume_api_version_from_endpoint()
-            if endpoint_api_version != options.os_volume_api_version:
+            if (endpoint_api_version != options.os_volume_api_version
+                    and api_version_input):
                 msg = (("OpenStack Block Storage API version is set to %s "
                         "but you are accessing a %s endpoint. "
                         "Change its value through --os-volume-api-version "
@@ -671,7 +788,17 @@ class OpenStackCinderShell(object):
                                "to the default API version: %s" %
                                endpoint_api_version)
 
+        profile = osprofiler_profiler and options.profile
+        if profile:
+            osprofiler_profiler.init(options.profile)
+
         args.func(self.cs, args)
+
+        if profile:
+            trace_id = osprofiler_profiler.get().get_base_id()
+            print("Trace ID: %s" % trace_id)
+            print("To display trace use next command:\n"
+                  "osprofiler trace show --html %s " % trace_id)
 
     def _run_extension_hooks(self, hook_type, *args, **kwargs):
         """Runs hooks for all registered extensions."""
@@ -759,7 +886,7 @@ class OpenStackCinderShell(object):
             ks_discover = discover.Discover(session=session, auth_url=auth_url)
             v2_auth_url = ks_discover.url_for('2.0')
             v3_auth_url = ks_discover.url_for('3.0')
-        except DiscoveryFailure:
+        except keystoneclient_exc.DiscoveryFailure:
             # Discovery response mismatch. Raise the error
             raise
         except Exception:

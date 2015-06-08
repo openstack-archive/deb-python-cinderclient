@@ -18,6 +18,7 @@ from cinderclient.v2 import availability_zones
 from cinderclient.v2 import cgsnapshots
 from cinderclient.v2 import consistencygroups
 from cinderclient.v2 import limits
+from cinderclient.v2 import pools
 from cinderclient.v2 import qos_specs
 from cinderclient.v2 import quota_classes
 from cinderclient.v2 import quotas
@@ -25,10 +26,11 @@ from cinderclient.v2 import services
 from cinderclient.v2 import volumes
 from cinderclient.v2 import volume_snapshots
 from cinderclient.v2 import volume_types
+from cinderclient.v2 import volume_type_access
 from cinderclient.v2 import volume_encryption_types
 from cinderclient.v2 import volume_backups
 from cinderclient.v2 import volume_backups_restore
-from cinderclient.v1 import volume_transfers
+from cinderclient.v2 import volume_transfers
 
 
 class Client(object):
@@ -49,9 +51,9 @@ class Client(object):
                  proxy_tenant_id=None, proxy_token=None, region_name=None,
                  endpoint_type='publicURL', extensions=None,
                  service_type='volumev2', service_name=None,
-                 volume_service_name=None, retries=None, http_log_debug=False,
-                 cacert=None, auth_system='keystone', auth_plugin=None,
-                 session=None, **kwargs):
+                 volume_service_name=None, bypass_url=None, retries=None,
+                 http_log_debug=False, cacert=None, auth_system='keystone',
+                 auth_plugin=None, session=None, **kwargs):
         # FIXME(comstud): Rename the api_key argument above when we
         # know it's not being used as keyword argument
         password = api_key
@@ -61,6 +63,8 @@ class Client(object):
         self.volumes = volumes.VolumeManager(self)
         self.volume_snapshots = volume_snapshots.SnapshotManager(self)
         self.volume_types = volume_types.VolumeTypeManager(self)
+        self.volume_type_access = \
+            volume_type_access.VolumeTypeAccessManager(self)
         self.volume_encryption_types = \
             volume_encryption_types.VolumeEncryptionTypeManager(self)
         self.qos_specs = qos_specs.QoSSpecsManager(self)
@@ -75,6 +79,7 @@ class Client(object):
         self.cgsnapshots = cgsnapshots.CgsnapshotManager(self)
         self.availability_zones = \
             availability_zones.AvailabilityZoneManager(self)
+        self.pools = pools.PoolManager(self)
 
         # Add in any extensions...
         if extensions:
@@ -98,6 +103,7 @@ class Client(object):
             service_type=service_type,
             service_name=service_name,
             volume_service_name=volume_service_name,
+            bypass_url=bypass_url,
             retries=retries,
             http_log_debug=http_log_debug,
             cacert=cacert,

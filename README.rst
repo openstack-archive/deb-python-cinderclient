@@ -18,7 +18,7 @@ pull requests.
 
 .. _Github: https://github.com/openstack/python-cinderclient
 .. _Launchpad: https://launchpad.net/python-cinderclient
-.. _Gerrit: http://wiki.openstack.org/GerritWorkflow
+.. _Gerrit: http://docs.openstack.org/infra/manual/developers.html#development-workflow
 
 This code a fork of `Jacobian's python-cloudservers`__ If you need API support
 for the Rackspace API solely or the BSD license, you should use that repository.
@@ -110,7 +110,7 @@ You'll find complete documentation on the shell by running
         list-extensions     List all the os-api extensions that are available.
 
     Optional arguments:
-      --debug               Print debugging output
+      -d, --debug               Print debugging output
       --os-username <auth-user-name>
                             Defaults to env[OS_USERNAME].
       --os-password <auth-password>

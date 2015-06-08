@@ -118,11 +118,6 @@ class Volume(base.Resource):
         """Migrate the volume to a new host."""
         self.manager.migrate_volume(self, host, force_host_copy)
 
-#    def migrate_volume_completion(self, old_volume, new_volume, error):
-#        """Complete the migration of the volume."""
-#        self.manager.migrate_volume_completion(self, old_volume,
-#                                               new_volume, error)
-
     def update_all_metadata(self, metadata):
         """Update all metadata of this volume."""
         return self.manager.update_all_metadata(self, metadata)
@@ -210,7 +205,13 @@ class VolumeManager(base.ManagerWithFind):
             if val:
                 qparams[opt] = val
 
-        query_string = "?%s" % urlencode(qparams) if qparams else ""
+        # Transform the dict to a sequence of two-element tuples in fixed
+        # order, then the encoded string will be consistent in Python 2&3.
+        if qparams:
+            new_qparams = sorted(qparams.items(), key=lambda x: x[0])
+            query_string = "?%s" % urlencode(new_qparams)
+        else:
+            query_string = ""
 
         detail = ""
         if detailed:

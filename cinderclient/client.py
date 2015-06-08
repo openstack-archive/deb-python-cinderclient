@@ -28,9 +28,11 @@ from keystoneclient.auth.identity import base
 import requests
 
 from cinderclient import exceptions
+from cinderclient.openstack.common.gettextutils import _
+from cinderclient.openstack.common import importutils
 from cinderclient.openstack.common import strutils
-from cinderclient import utils
 
+osprofiler_web = importutils.try_import("osprofiler.web")
 
 try:
     import urlparse
@@ -64,20 +66,37 @@ def get_volume_api_from_url(url):
             return version[1:]
 
     msg = "Invalid client version '%s'. must be one of: %s" % (
-        (version, ', '.join(valid_versions)))
+        (version, ', '.join(_VALID_VERSIONS)))
     raise exceptions.UnsupportedVersion(msg)
 
 
 class SessionClient(adapter.LegacyJsonAdapter):
 
-    def __init__(self, **kwargs):
-        kwargs.setdefault('user_agent', 'python-cinderclient')
-        kwargs.setdefault('service_type', 'volume')
-        super(SessionClient, self).__init__(**kwargs)
-
-    def request(self, *args, **kwargs):
+    def request(self, url, method, **kwargs):
         kwargs.setdefault('authenticated', False)
-        return super(SessionClient, self).request(*args, **kwargs)
+
+        # NOTE(thingee): v1 and v2 require the project id in the url. Prepend
+        # it if we're doing discovery. We figure out if we're doing discovery
+        # if there is no project id already specified in the path. parts is
+        # a list where index 1 is the version discovered and index 2 might be
+        # an empty string or a project id.
+        endpoint = self.get_endpoint()
+        parts = urlparse.urlsplit(endpoint).path.split('/')
+        project_id = self.get_project_id()
+        if (parts[1] in ['v1', 'v2'] and parts[2] == ''
+                and project_id is not None):
+            url = '{0}{1}{2}'.format(endpoint, project_id, url)
+
+        # Note(tpatil): The standard call raises errors from
+        # keystoneclient, here we need to raise the cinderclient errors.
+        raise_exc = kwargs.pop('raise_exc', True)
+        resp, body = super(SessionClient, self).request(url, method,
+                                                        raise_exc=False,
+                                                        **kwargs)
+        if raise_exc and resp.status_code >= 400:
+            raise exceptions.from_response(resp, body)
+
+        return resp, body
 
     def _cs_request(self, url, method, **kwargs):
         # this function is mostly redundant but makes compatibility easier
@@ -96,32 +115,19 @@ class SessionClient(adapter.LegacyJsonAdapter):
     def delete(self, url, **kwargs):
         return self._cs_request(url, 'DELETE', **kwargs)
 
-    def _invalidate(self, auth=None):
-        # NOTE(jamielennox): This is being implemented in keystoneclient
-        return self.session.invalidate(auth or self.auth)
-
-    def _get_token(self, auth=None):
-        # NOTE(jamielennox): This is being implemented in keystoneclient
-        return self.session.get_token(auth or self.auth)
-
-    def _get_endpoint(self, auth=None, **kwargs):
-        # NOTE(jamielennox): This is being implemented in keystoneclient
-        if self.service_type:
-            kwargs.setdefault('service_type', self.service_type)
-        if self.service_name:
-            kwargs.setdefault('service_name', self.service_name)
-        if self.interface:
-            kwargs.setdefault('interface', self.interface)
-        if self.region_name:
-            kwargs.setdefault('region_name', self.region_name)
-        return self.session.get_endpoint(auth or self.auth, **kwargs)
-
     def get_volume_api_version_from_endpoint(self):
-        return get_volume_api_from_url(self._get_endpoint())
+        endpoint = self.get_endpoint()
+        if not endpoint:
+            msg = _('The Cinder server does not support %s. Check your '
+                    'providers supported versions and try again with '
+                    'setting --os-volume-api-version or the environment '
+                    'variable OS_VOLUME_API_VERSION.') % self.version
+            raise exceptions.InvalidAPIVersion(msg)
+        return get_volume_api_from_url(endpoint)
 
     def authenticate(self, auth=None):
-        self._invalidate(auth)
-        return self._get_token(auth)
+        self.invalidate(auth)
+        return self.get_token(auth)
 
     @property
     def service_catalog(self):
@@ -143,7 +149,8 @@ class HTTPClient(object):
                  insecure=False, timeout=None, tenant_id=None,
                  proxy_tenant_id=None, proxy_token=None, region_name=None,
                  endpoint_type='publicURL', service_type=None,
-                 service_name=None, volume_service_name=None, retries=None,
+                 service_name=None, volume_service_name=None,
+                 bypass_url=None, retries=None,
                  http_log_debug=False, cacert=None,
                  auth_system='keystone', auth_plugin=None):
         self.user = user
@@ -159,17 +166,18 @@ class HTTPClient(object):
             if not auth_url:
                 raise exceptions.EndpointNotFound()
 
-        self.auth_url = auth_url.rstrip('/')
+        self.auth_url = auth_url.rstrip('/') if auth_url else None
         self.version = 'v1'
         self.region_name = region_name
         self.endpoint_type = endpoint_type
         self.service_type = service_type
         self.service_name = service_name
         self.volume_service_name = volume_service_name
+        self.bypass_url = bypass_url.rstrip('/') if bypass_url else bypass_url
         self.retries = int(retries or 0)
         self.http_log_debug = http_log_debug
 
-        self.management_url = None
+        self.management_url = self.bypass_url or None
         self.auth_token = None
         self.proxy_token = proxy_token
         self.proxy_tenant_id = proxy_tenant_id
@@ -224,6 +232,10 @@ class HTTPClient(object):
         kwargs.setdefault('headers', kwargs.get('headers', {}))
         kwargs['headers']['User-Agent'] = self.USER_AGENT
         kwargs['headers']['Accept'] = 'application/json'
+
+        if osprofiler_web:
+            kwargs['headers'].update(osprofiler_web.get_trace_id_headers())
+
         if 'body' in kwargs:
             kwargs['headers']['Content-Type'] = 'application/json'
             kwargs['data'] = json.dumps(kwargs['body'])
@@ -292,6 +304,10 @@ class HTTPClient(object):
                 if attempts > self.retries:
                     msg = 'Unable to establish connection: %s' % e
                     raise exceptions.ConnectionError(msg)
+            except requests.exceptions.Timeout as e:
+                self._logger.debug("Timeout error: %s" % e)
+                if attempts > self.retries:
+                    raise
             self._logger.debug(
                 "Failed attempt(%s of %s), retrying in %s seconds" %
                 (attempts, self.retries, backoff))
@@ -400,7 +416,10 @@ class HTTPClient(object):
             # existing token? If so, our actual endpoints may
             # be different than that of the admin token.
             if self.proxy_token:
-                self._fetch_endpoints_from_auth(admin_url)
+                if self.bypass_url:
+                    self.set_management_url(self.bypass_url)
+                else:
+                    self._fetch_endpoints_from_auth(admin_url)
                 # Since keystone no longer returns the user token
                 # with the endpoints any more, we need to replace
                 # our service account token with the user token.
@@ -416,6 +435,11 @@ class HTTPClient(object):
                 if auth_url.find('v2.0') < 0:
                     auth_url = auth_url + '/v2.0'
                 self._v2_auth(auth_url)
+
+        if self.bypass_url:
+            self.set_management_url(self.bypass_url)
+        elif not self.management_url:
+            raise exceptions.Unauthorized('Cinder Client')
 
     def _v1_auth(self, url):
         if self.proxy_token:
@@ -476,7 +500,7 @@ def _construct_http_client(username=None, password=None, project_id=None,
                            region_name=None, endpoint_type='publicURL',
                            service_type='volume',
                            service_name=None, volume_service_name=None,
-                           retries=None,
+                           bypass_url=None, retries=None,
                            http_log_debug=False,
                            auth_system='keystone', auth_plugin=None,
                            cacert=None, tenant_id=None,
@@ -484,7 +508,9 @@ def _construct_http_client(username=None, password=None, project_id=None,
                            auth=None,
                            **kwargs):
 
-    if session:
+    # Don't use sessions if third party plugin is used
+    if session and not auth_plugin:
+        kwargs.setdefault('user_agent', 'python-cinderclient')
         kwargs.setdefault('interface', endpoint_type)
         return SessionClient(session=session,
                              auth=auth,
@@ -509,6 +535,7 @@ def _construct_http_client(username=None, password=None, project_id=None,
                           service_type=service_type,
                           service_name=service_name,
                           volume_service_name=volume_service_name,
+                          bypass_url=bypass_url,
                           retries=retries,
                           http_log_debug=http_log_debug,
                           cacert=cacert,
@@ -529,9 +556,9 @@ def get_client_class(version):
             (version, ', '.join(version_map)))
         raise exceptions.UnsupportedVersion(msg)
 
-    return utils.import_class(client_path)
+    return importutils.import_class(client_path)
 
 
 def Client(version, *args, **kwargs):
     client_class = get_client_class(version)
-    return client_class(*args, **kwargs)
+    return client_class(*args, version=version, **kwargs)

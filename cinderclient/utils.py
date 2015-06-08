@@ -17,7 +17,6 @@ from __future__ import print_function
 
 import os
 import pkg_resources
-import re
 import sys
 import uuid
 
@@ -62,45 +61,6 @@ def add_arg(f, *args, **kwargs):
         f.arguments.insert(0, (args, kwargs))
 
 
-def add_resource_manager_extra_kwargs_hook(f, hook):
-    """Adds hook to bind CLI arguments to ResourceManager calls.
-
-    The `do_foo` calls in shell.py will receive CLI args and then in turn pass
-    them through to the ResourceManager. Before passing through the args, the
-    hooks registered here will be called, giving us a chance to add extra
-    kwargs (taken from the command-line) to what's passed to the
-    ResourceManager.
-    """
-    if not hasattr(f, 'resource_manager_kwargs_hooks'):
-        f.resource_manager_kwargs_hooks = []
-
-    names = [h.__name__ for h in f.resource_manager_kwargs_hooks]
-    if hook.__name__ not in names:
-        f.resource_manager_kwargs_hooks.append(hook)
-
-
-def get_resource_manager_extra_kwargs(f, args, allow_conflicts=False):
-    """Return extra_kwargs by calling resource manager kwargs hooks."""
-    hooks = getattr(f, "resource_manager_kwargs_hooks", [])
-    extra_kwargs = {}
-    for hook in hooks:
-        hook_name = hook.__name__
-        hook_kwargs = hook(args)
-
-        conflicting_keys = set(hook_kwargs.keys()) & set(extra_kwargs.keys())
-        if conflicting_keys and not allow_conflicts:
-            msg = ("Hook '%(hook_name)s' is attempting to redefine attributes "
-                   "'%(conflicting_keys)s'" % {
-                       'hook_name': hook_name,
-                       'conflicting_keys': conflicting_keys
-                   })
-            raise Exception(msg)
-
-        extra_kwargs.update(hook_kwargs)
-
-    return extra_kwargs
-
-
 def unauthenticated(f):
     """
     Adds 'unauthenticated' attribute to decorated function.
@@ -143,10 +103,6 @@ def get_service_type(f):
     return getattr(f, 'service_type', None)
 
 
-def pretty_choice_list(l):
-    return ', '.join("'%s'" % i for i in l)
-
-
 def _print(pt, order):
     if sys.version_info >= (3, 0):
         print(pt.get_string(sortby=order))
@@ -154,7 +110,17 @@ def _print(pt, order):
         print(strutils.safe_encode(pt.get_string(sortby=order)))
 
 
-def print_list(objs, fields, formatters={}, order_by=None):
+def print_list(objs, fields, formatters=None, sortby_index=0):
+    '''Prints a list of objects.
+
+    @param objs: Objects to print
+    @param fields: Fields on each object to be printed
+    @param formatters: Custom field formatters
+    @param sortby_index: Results sorted against the key in the fields list at
+                         this index; if None then the object order is not
+                         altered
+    '''
+    formatters = formatters or {}
     mixed_case_fields = ['serverId']
     pt = prettytable.PrettyTable([f for f in fields], caching=False)
     pt.aligns = ['l' for f in fields]
@@ -173,11 +139,15 @@ def print_list(objs, fields, formatters={}, order_by=None):
                     data = o[field]
                 else:
                     data = getattr(o, field_name, '')
+                if data is None:
+                    data = '-'
                 row.append(data)
         pt.add_row(row)
 
-    if order_by is None:
-        order_by = fields[0]
+    if sortby_index is None:
+        order_by = None
+    else:
+        order_by = fields[sortby_index]
     _print(pt, order_by)
 
 
@@ -281,13 +251,6 @@ def safe_issubclass(*args):
     return False
 
 
-def import_class(import_str):
-    """Returns a class from a string including module and class."""
-    mod_str, _sep, class_str = import_str.rpartition('.')
-    __import__(mod_str)
-    return getattr(sys.modules[mod_str], class_str)
-
-
 def _load_entry_point(ep_name, name=None):
     """Try to load the entry point ep_name that matches name."""
     for ep in pkg_resources.iter_entry_points(ep_name, name=name):
@@ -295,23 +258,3 @@ def _load_entry_point(ep_name, name=None):
             return ep.load()
         except (ImportError, pkg_resources.UnknownExtra, AttributeError):
             continue
-
-_slugify_strip_re = re.compile(r'[^\w\s-]')
-_slugify_hyphenate_re = re.compile(r'[-\s]+')
-
-
-# http://code.activestate.com/recipes/
-#   577257-slugify-make-a-string-usable-in-a-url-or-filename/
-def slugify(value):
-    """
-    Normalizes string, converts to lowercase, removes non-alpha characters,
-    and converts spaces to hyphens.
-
-    From Django's "django/template/defaultfilters.py".
-    """
-    import unicodedata
-    if not isinstance(value, six.text_type):
-        value = six.text_type(value)
-    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore')
-    value = six.text_type(_slugify_strip_re.sub('', value).strip().lower())
-    return _slugify_hyphenate_re.sub('-', value)
