@@ -30,6 +30,7 @@ Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/python-cinderclient.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/python-cinderclient.git
 Homepage: https://github.com/openstack/python-cinderclient
+XS-Testsuite: autopkgtest
 
 Package: python-cinderclient
 Architecture: all
