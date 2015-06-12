@@ -1,4 +1,4 @@
-python-cinderclient (1:1.2.0-1) UNRELEASED; urgency=medium
+python-cinderclient (1:1.2.2-1) UNRELEASED; urgency=medium
 
   * New upstream release.
     - d/control: Align requirements with upstream.
