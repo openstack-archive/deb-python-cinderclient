@@ -322,6 +322,15 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('POST', '/volumes', partial_body=expected)
         self.assert_called('GET', '/volumes/1234')
 
+    def test_create_volume_from_image(self):
+        expected = {'volume': {'status': 'creating',
+                               'size': 1,
+                               'imageRef': '1234',
+                               'attach_status': 'detached'}}
+        self.run_command('create --image=1234 1')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
+
     def test_create_size_required_if_not_snapshot_or_clone(self):
         self.assertRaises(SystemExit, self.run_command, 'create')
 
@@ -335,7 +344,8 @@ class ShellTest(utils.TestCase):
 
     def test_delete_by_name(self):
         self.run_command('delete sample-volume')
-        self.assert_called_anytime('GET', '/volumes/detail?all_tenants=1')
+        self.assert_called_anytime('GET', '/volumes/detail?all_tenants=1&'
+                                          'name=sample-volume')
         self.assert_called('DELETE', '/volumes/1234')
 
     def test_delete_multiple(self):
@@ -345,6 +355,10 @@ class ShellTest(utils.TestCase):
 
     def test_backup(self):
         self.run_command('backup-create 1234')
+        self.assert_called('POST', '/backups')
+
+    def test_backup_incremental(self):
+        self.run_command('backup-create 1234 --incremental')
         self.assert_called('POST', '/backups')
 
     def test_restore(self):
@@ -599,6 +613,12 @@ class ShellTest(utils.TestCase):
                                           'host': 'fakehost'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
+    def test_migrate_volume_bool_force(self):
+        self.run_command('migrate 1234 fakehost --force-host-copy')
+        expected = {'os-migrate_volume': {'force_host_copy': True,
+                                          'host': 'fakehost'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
+
     def test_snapshot_metadata_set(self):
         self.run_command('snapshot-metadata 1234 set key1=val1 key2=val2')
         self.assert_called('POST', '/snapshots/1234/metadata',
@@ -779,7 +799,21 @@ class ShellTest(utils.TestCase):
         expected = {'snapshot': {'volume_id': 1234,
                                  'metadata': {'k1': 'v1',
                                               'k2': 'v2'}}}
-        self.run_command('snapshot-create 1234 --metadata k1=v1 k2=v2')
+        self.run_command('snapshot-create 1234 --metadata k1=v1 k2=v2 '
+                         '--force=True')
+        self.assert_called_anytime('POST', '/snapshots', partial_body=expected)
+
+    def test_create_snapshot_from_volume_with_metadata_bool_force(self):
+        """
+        Tests create snapshot with --metadata parameter.
+
+        Checks metadata params are set during create snapshot
+        when metadata is passed
+        """
+        expected = {'snapshot': {'volume_id': 1234,
+                                 'metadata': {'k1': 'v1',
+                                              'k2': 'v2'}}}
+        self.run_command('snapshot-create 1234 --metadata k1=v1 k2=v2 --force')
         self.assert_called_anytime('POST', '/snapshots', partial_body=expected)
 
     def test_get_pools(self):
@@ -797,3 +831,44 @@ class ShellTest(utils.TestCase):
     def test_list_transfer_all_tenants(self):
         self.run_command('transfer-list --all-tenants=1')
         self.assert_called('GET', '/os-volume-transfer/detail?all_tenants=1')
+
+    def test_consistencygroup_update(self):
+        self.run_command('consisgroup-update '
+                         '--name cg2 --description desc2 '
+                         '--add-volumes uuid1,uuid2 '
+                         '--remove-volumes uuid3,uuid4 '
+                         '1234')
+        expected = {'consistencygroup': {'name': 'cg2',
+                                         'description': 'desc2',
+                                         'add_volumes': 'uuid1,uuid2',
+                                         'remove_volumes': 'uuid3,uuid4'}}
+        self.assert_called('PUT', '/consistencygroups/1234',
+                           body=expected)
+
+    def test_consistencygroup_update_bad_request(self):
+        self.assertRaises(exceptions.BadRequest,
+                          self.run_command,
+                          'consisgroup-update 1234')
+
+    def test_consistencygroup_create_from_src(self):
+        self.run_command('consisgroup-create-from-src '
+                         '--name cg '
+                         '--cgsnapshot 1234')
+        expected = {
+            'consistencygroup-from-src': {
+                'name': 'cg',
+                'cgsnapshot_id': '1234',
+                'description': None,
+                'user_id': None,
+                'project_id': None,
+                'status': 'creating'
+            }
+        }
+        self.assert_called('POST', '/consistencygroups/create_from_src',
+                           expected)
+
+    def test_consistencygroup_create_from_src_bad_request(self):
+        self.assertRaises(exceptions.BadRequest,
+                          self.run_command,
+                          'consisgroup-create-from-src '
+                          '--name cg')

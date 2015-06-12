@@ -26,6 +26,8 @@ from cinderclient import base
 
 class Snapshot(base.Resource):
     """A Snapshot is a point-in-time snapshot of an openstack volume."""
+    NAME_ATTR = "display_name"
+
     def __repr__(self):
         return "<Snapshot: %s>" % self.id
 
@@ -105,7 +107,6 @@ class SnapshotManager(base.ManagerWithFind):
 
         :rtype: list of :class:`Snapshot`
         """
-
         if search_opts is None:
             search_opts = {}
 

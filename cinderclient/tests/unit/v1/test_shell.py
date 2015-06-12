@@ -92,7 +92,7 @@ class ShellTest(utils.TestCase):
 
     def test_extract_metadata(self):
         # mimic the result of argparse's parse_args() method
-        class Arguments:
+        class Arguments(object):
 
             def __init__(self, metadata=None):
                 self.metadata = metadata or []
@@ -115,7 +115,7 @@ class ShellTest(utils.TestCase):
         v = cs.volumes.list()[0]
         setattr(v, 'os-vol-tenant-attr:tenant_id', 'fake_tenant')
         setattr(v, '_info', {'attachments': [{'server_id': 1234}],
-                'id': 1234, 'name': 'sample-volume',
+                'id': 1234, 'display_name': 'sample-volume',
                 'os-vol-tenant-attr:tenant_id': 'fake_tenant'})
         shell_v1._translate_volume_keys([v])
         self.assertEqual(v.tenant_id, 'fake_tenant')
@@ -220,6 +220,10 @@ class ShellTest(utils.TestCase):
         self.run_command('availability-zone-list')
         self.assert_called('GET', '/os-availability-zone')
 
+    def test_list_limit(self):
+        self.run_command('list --limit=10')
+        self.assert_called('GET', '/volumes/detail?limit=10')
+
     def test_show(self):
         self.run_command('show 1234')
         self.assert_called('GET', '/volumes/1234')
@@ -230,7 +234,8 @@ class ShellTest(utils.TestCase):
 
     def test_delete_by_name(self):
         self.run_command('delete sample-volume')
-        self.assert_called_anytime('GET', '/volumes/detail?all_tenants=1')
+        self.assert_called_anytime('GET', '/volumes/detail?all_tenants=1&'
+                                          'display_name=sample-volume')
         self.assert_called('DELETE', '/volumes/1234')
 
     def test_delete_multiple(self):

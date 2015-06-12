@@ -153,30 +153,30 @@ def _extract_metadata(args):
 @utils.arg('--name',
            metavar='<name>',
            default=None,
-           help='Filters results by a name. OPTIONAL: Default=None.')
+           help='Filters results by a name. Default=None.')
 @utils.arg('--display-name',
            help=argparse.SUPPRESS)
 @utils.arg('--status',
            metavar='<status>',
            default=None,
-           help='Filters results by a status. OPTIONAL: Default=None.')
+           help='Filters results by a status. Default=None.')
 @utils.arg('--metadata',
            type=str,
            nargs='*',
            metavar='<key=value>',
            default=None,
            help='Filters results by a metadata key and value pair. '
-                'OPTIONAL: Default=None.')
+                'Default=None.')
 @utils.arg('--marker',
            metavar='<marker>',
            default=None,
            help='Begin returning volumes that appear later in the volume '
                 'list than that represented by this volume id. '
-                'OPTIONAL: Default=None.')
+                'Default=None.')
 @utils.arg('--limit',
            metavar='<limit>',
            default=None,
-           help='Maximum number of volumes to return. OPTIONAL: Default=None.')
+           help='Maximum number of volumes to return. Default=None.')
 @utils.arg('--sort_key',
            metavar='<sort_key>',
            default=None,
@@ -190,7 +190,7 @@ def _extract_metadata(args):
            default=None,
            help=(('Comma-separated list of sort keys and directions in the '
                   'form of <key>[:<asc|desc>]. '
-                  'Valid keys: %s. OPTIONAL: '
+                  'Valid keys: %s. '
                   'Default=None.') % ', '.join(volumes.SORT_KEY_VALUES)))
 @utils.arg('--tenant',
            type=str,
@@ -378,7 +378,7 @@ def do_create(cs, args):
     # NOTE(N.S.): end of taken piece
 
     # Keep backward compatibility with image_id, favoring explicit ID
-    image_ref = args.image_id or args.image_ref
+    image_ref = args.image_id or args.image or args.image_ref
 
     volume = cs.volumes.create(args.size,
                                args.consisgroup_id,
@@ -598,13 +598,15 @@ def do_snapshot_show(cs, args):
            help='Name or ID of volume to snapshot.')
 @utils.arg('--force',
            metavar='<True|False>',
+           const=True,
+           nargs='?',
            default=False,
            help='Allows or disallows snapshot of '
-                'a volume when the volume is attached to an instance. '
-                'If set to True, ignores the current status of the '
-                'volume when attempting to snapshot it rather '
-                'than forcing it to be available. '
-                'Default=False.')
+           'a volume when the volume is attached to an instance. '
+           'If set to True, ignores the current status of the '
+           'volume when attempting to snapshot it rather '
+           'than forcing it to be available. '
+           'Default=False.')
 @utils.arg('--name',
            metavar='<name>',
            default=None,
@@ -1073,10 +1075,12 @@ def _find_volume_type(cs, vtype):
            help='Name or ID of volume to snapshot.')
 @utils.arg('--force',
            metavar='<True|False>',
+           const=True,
+           nargs='?',
            default=False,
            help='Enables or disables upload of '
-                'a volume that is attached to an instance. '
-                'Default=False.')
+           'a volume that is attached to an instance. '
+           'Default=False.')
 @utils.arg('--container-format',
            metavar='<container-format>',
            default='bare',
@@ -1109,11 +1113,14 @@ def do_upload_to_image(cs, args):
 @utils.arg('volume', metavar='<volume>', help='ID of volume to migrate.')
 @utils.arg('host', metavar='<host>', help='Destination host.')
 @utils.arg('--force-host-copy', metavar='<True|False>',
-           choices=['True', 'False'], required=False,
+           choices=['True', 'False'],
+           required=False,
+           const=True,
+           nargs='?',
            default=False,
            help='Enables or disables generic host-based '
-                'force-migration, which bypasses driver '
-                'optimizations. Default=False.')
+           'force-migration, which bypasses driver '
+           'optimizations. Default=False.')
 @utils.service_type('volumev2')
 def do_migrate(cs, args):
     """Migrates volume to a new host."""
@@ -1150,6 +1157,10 @@ def do_retype(cs, args):
            metavar='<description>',
            default=None,
            help='Backup description. Default=None.')
+@utils.arg('--incremental',
+           action='store_true',
+           help='Incremental backup. Default=False.',
+           default=False)
 @utils.service_type('volumev2')
 def do_backup_create(cs, args):
     """Creates a volume backup."""
@@ -1163,7 +1174,8 @@ def do_backup_create(cs, args):
     backup = cs.backups.create(volume.id,
                                args.container,
                                args.name,
-                               args.description)
+                               args.description,
+                               args.incremental)
 
     info = {"volume_id": volume.id}
     info.update(backup._info)
@@ -1597,6 +1609,8 @@ def do_qos_show(cs, args):
            help='ID of QoS specifications to delete.')
 @utils.arg('--force',
            metavar='<True|False>',
+           const=True,
+           nargs='?',
            default=False,
            help='Enables or disables deletion of in-use '
                 'QoS specifications. Default=False.')
@@ -1940,6 +1954,32 @@ def do_consisgroup_create(cs, args):
     utils.print_dict(info)
 
 
+@utils.arg('--cgsnapshot',
+           metavar='<cgsnapshot>',
+           help='Name or ID of a cgsnapshot. Default=None.')
+@utils.arg('--name',
+           metavar='<name>',
+           help='Name of a consistency group. Default=None.')
+@utils.arg('--description',
+           metavar='<description>',
+           help='Description of a consistency group. Default=None.')
+@utils.service_type('volumev2')
+def do_consisgroup_create_from_src(cs, args):
+    """Creates a consistency group from a cgsnapshot."""
+    if not args.cgsnapshot:
+        msg = ('Cannot create consistency group because the source '
+               'cgsnapshot is not provided.')
+        raise exceptions.BadRequest(code=400, message=msg)
+    cgsnapshot = _find_cgsnapshot(cs, args.cgsnapshot)
+    info = cs.consistencygroups.create_from_src(
+        cgsnapshot.id,
+        args.name,
+        args.description)
+
+    info.pop('links', None)
+    utils.print_dict(info)
+
+
 @utils.arg('consistencygroup',
            metavar='<consistencygroup>', nargs='+',
            help='Name or ID of one or more consistency groups '
@@ -1966,6 +2006,48 @@ def do_consisgroup_delete(cs, args):
     if failure_count == len(args.consistencygroup):
         raise exceptions.CommandError("Unable to delete any of the specified "
                                       "consistency groups.")
+
+
+@utils.arg('consistencygroup',
+           metavar='<consistencygroup>',
+           help='Name or ID of a consistency group.')
+@utils.arg('--name', metavar='<name>',
+           help='New name for consistency group. Default=None.')
+@utils.arg('--description', metavar='<description>',
+           help='New description for consistency group. Default=None.')
+@utils.arg('--add-volumes',
+           metavar='<uuid1,uuid2,......>',
+           help='UUID of one or more volumes '
+                'to be added to the consistency group, '
+                'separated by commas. Default=None.')
+@utils.arg('--remove-volumes',
+           metavar='<uuid3,uuid4,......>',
+           help='UUID of one or more volumes '
+                'to be removed from the consistency group, '
+                'separated by commas. Default=None.')
+@utils.service_type('volumev2')
+def do_consisgroup_update(cs, args):
+    """Updates a consistencygroup."""
+    kwargs = {}
+
+    if args.name is not None:
+        kwargs['name'] = args.name
+
+    if args.description is not None:
+        kwargs['description'] = args.description
+
+    if args.add_volumes is not None:
+        kwargs['add_volumes'] = args.add_volumes
+
+    if args.remove_volumes is not None:
+        kwargs['remove_volumes'] = args.remove_volumes
+
+    if not kwargs:
+        msg = ('At least one of the following args must be supplied: '
+               'name, description, add-volumes, remove-volumes.')
+        raise exceptions.BadRequest(code=400, message=msg)
+
+    _find_consistencygroup(cs, args.consistencygroup).update(**kwargs)
 
 
 @utils.arg('--all-tenants',

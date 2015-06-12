@@ -164,14 +164,24 @@ class OpenStackCinderShell(object):
 
         parser.add_argument('--endpoint-type',
                             metavar='<endpoint-type>',
+                            dest='os_endpoint_type',
                             default=utils.env('CINDER_ENDPOINT_TYPE',
                             default=DEFAULT_CINDER_ENDPOINT_TYPE),
+                            help='DEPRECATED! Use --os-endpoint-type.')
+        parser.add_argument('--endpoint_type',
+                            help=argparse.SUPPRESS)
+
+        parser.add_argument('--os-endpoint-type',
+                            metavar='<os-endpoint-type>',
+                            default=utils.env('OS_ENDPOINT_TYPE',
+                            default=utils.env('CINDER_ENDPOINT_TYPE',
+                            default=DEFAULT_CINDER_ENDPOINT_TYPE)),
                             help='Endpoint type, which is publicURL or '
                             'internalURL. '
-                            'Default=nova env[CINDER_ENDPOINT_TYPE] or '
+                            'Default=env[OS_ENDPOINT_TYPE] or '
+                            'nova env[CINDER_ENDPOINT_TYPE] or '
                             + DEFAULT_CINDER_ENDPOINT_TYPE + '.')
-
-        parser.add_argument('--endpoint_type',
+        parser.add_argument('--os_endpoint_type',
                             help=argparse.SUPPRESS)
 
         parser.add_argument('--os-volume-api-version',
@@ -581,13 +591,13 @@ class OpenStackCinderShell(object):
             return 0
 
         (os_username, os_password, os_tenant_name, os_auth_url,
-         os_region_name, os_tenant_id, endpoint_type, insecure,
+         os_region_name, os_tenant_id, endpoint_type,
          service_type, service_name, volume_service_name, bypass_url,
          cacert, os_auth_system) = (
              args.os_username, args.os_password,
              args.os_tenant_name, args.os_auth_url,
              args.os_region_name, args.os_tenant_id,
-             args.endpoint_type, args.insecure,
+             args.os_endpoint_type,
              args.service_type, args.service_name,
              args.volume_service_name,
              args.bypass_url, args.os_cacert,
@@ -596,9 +606,6 @@ class OpenStackCinderShell(object):
             auth_plugin = cinderclient.auth_plugin.load_plugin(os_auth_system)
         else:
             auth_plugin = None
-
-        if not endpoint_type:
-            endpoint_type = DEFAULT_CINDER_ENDPOINT_TYPE
 
         if not service_type:
             service_type = DEFAULT_CINDER_SERVICE_TYPE
@@ -680,8 +687,11 @@ class OpenStackCinderShell(object):
                 "You must provide an authentication URL "
                 "through --os-auth-url or env[OS_AUTH_URL].")
 
-        auth_session = self._get_keystone_session()
-        if not service_type_input or not api_version_input:
+        auth_session = None
+        if not auth_plugin:
+            auth_session = self._get_keystone_session()
+
+        if auth_session and (not service_type_input or not api_version_input):
             # NOTE(thingee): Unfortunately the v2 shell is tied to volumev2
             # service_type. If the service_catalog just contains service_type
             # volume with x.x.x.x:8776 for discovery, and the user sets version
@@ -694,7 +704,7 @@ class OpenStackCinderShell(object):
                 endpoint = keystone_adapter.get_endpoint(
                     service_type=service_type,
                     version=version,
-                    interface='public')
+                    interface=endpoint_type)
 
                 # Service was found, but wrong version. Lets try a different
                 # version, if the user did not specify one.
@@ -706,7 +716,7 @@ class OpenStackCinderShell(object):
 
                     endpoint = keystone_adapter.get_endpoint(
                         service_type=service_type, version=version,
-                        interface='public')
+                        interface=endpoint_type)
 
             except keystoneclient_exc.EndpointNotFound as e:
                 # No endpoint found with that service_type, lets fall back to
@@ -720,7 +730,7 @@ class OpenStackCinderShell(object):
                 try:
                     endpoint = keystone_adapter.get_endpoint(
                         version=version,
-                        service_type=service_type, interface='public')
+                        service_type=service_type, interface=endpoint_type)
 
                     # Service was found, but wrong version. Lets try
                     # a different version, if the user did not specify one.
@@ -732,7 +742,7 @@ class OpenStackCinderShell(object):
 
                         endpoint = keystone_adapter.get_endpoint(
                             service_type=service_type, version=version,
-                            interface='public')
+                            interface=endpoint_type)
 
                 except keystoneclient_exc.EndpointNotFound:
                     raise e

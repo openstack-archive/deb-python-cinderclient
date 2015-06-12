@@ -17,7 +17,6 @@
 from cinderclient.tests.unit import utils
 from cinderclient.tests.unit.v2 import fakes
 
-
 cs = fakes.FakeClient()
 
 
@@ -47,7 +46,7 @@ class ConsistencygroupsTest(utils.TestCase):
                                          'project_id': None}}
         cs.assert_called('POST', '/consistencygroups', body=expected)
 
-    def test_update_consistencygroup(self):
+    def test_update_consistencygroup_name(self):
         v = cs.consistencygroups.list()[0]
         expected = {'consistencygroup': {'name': 'cg2'}}
         v.update(name='cg2')
@@ -57,8 +56,58 @@ class ConsistencygroupsTest(utils.TestCase):
         cs.consistencygroups.update(v, name='cg2')
         cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
 
+    def test_update_consistencygroup_description(self):
+        v = cs.consistencygroups.list()[0]
+        expected = {'consistencygroup': {'description': 'cg2 desc'}}
+        v.update(description='cg2 desc')
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update('1234', description='cg2 desc')
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update(v, description='cg2 desc')
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+
+    def test_update_consistencygroup_add_volumes(self):
+        v = cs.consistencygroups.list()[0]
+        uuids = 'uuid1,uuid2'
+        expected = {'consistencygroup': {'add_volumes': uuids}}
+        v.update(add_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update('1234', add_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update(v, add_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+
+    def test_update_consistencygroup_remove_volumes(self):
+        v = cs.consistencygroups.list()[0]
+        uuids = 'uuid3,uuid4'
+        expected = {'consistencygroup': {'remove_volumes': uuids}}
+        v.update(remove_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update('1234', remove_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+        cs.consistencygroups.update(v, remove_volumes=uuids)
+        cs.assert_called('PUT', '/consistencygroups/1234', body=expected)
+
+    def test_update_consistencygroup_none(self):
+        self.assertEqual(None, cs.consistencygroups.update('1234'))
+
     def test_update_consistencygroup_no_props(self):
         cs.consistencygroups.update('1234')
+
+    def test_create_consistencygroup_from_src(self):
+        cs.consistencygroups.create_from_src('5678', name='cg')
+        expected = {
+            'consistencygroup-from-src': {
+                'status': 'creating',
+                'description': None,
+                'user_id': None,
+                'name': 'cg',
+                'cgsnapshot_id': '5678',
+                'project_id': None
+            }
+        }
+        cs.assert_called('POST', '/consistencygroups/create_from_src',
+                         body=expected)
 
     def test_list_consistencygroup(self):
         cs.consistencygroups.list()

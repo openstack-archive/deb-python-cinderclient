@@ -30,6 +30,8 @@ class Snapshot(base.Resource):
     """
     A Snapshot is a point-in-time snapshot of an openstack volume.
     """
+    NAME_ATTR = "display_name"
+
     def __repr__(self):
         return "<Snapshot: %s>" % self.id
 
@@ -54,7 +56,7 @@ class Snapshot(base.Resource):
         return self._info.get('os-extended-snapshot-attributes:project_id')
 
     def reset_state(self, state):
-        """Update the snapshot with the privided state."""
+        """Update the snapshot with the provided state."""
         self.manager.reset_state(self, state)
 
     def set_metadata(self, metadata):
