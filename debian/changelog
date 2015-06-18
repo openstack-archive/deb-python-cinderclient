@@ -1,4 +1,4 @@
-python-cinderclient (1:1.2.2-1) UNRELEASED; urgency=medium
+python-cinderclient (1:1.2.2-1) experimental; urgency=medium
 
   [ Corey Bryant ]
   * New upstream release.
