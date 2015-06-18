@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "disappear" ] ; then
+	update-alternatives --remove cinder /usr/bin/python2-cinder
+fi
+
+#DEBHELPER#
+
+exit 0

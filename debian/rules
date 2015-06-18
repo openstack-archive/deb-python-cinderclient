@@ -1,33 +1,51 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
-#export DH_VERBOSE=1
+PYTHONS:=$(shell pyversions -vr)
+PYTHON3S:=$(shell py3versions -vr)
 
 include /usr/share/openstack-pkg-tools/pkgos.make
 
 export OSLO_PACKAGE_VERSION=$(VERSION)
 
+%:
+	dh $@  --with python2,python3
+
 override_dh_auto_clean:
 	dh_auto_clean
-	rm -f cinderclient/versioninfo
-	rm -rf setuptools_git-*.egg
 	rm -rf build
 
-override_dh_auto_configure:
-	echo $(VERSION) > cinderclient/versioninfo
-	dh_auto_configure
+override_dh_auto_install:
+	set -e ; for pyvers in $(PYTHONS); do \
+		python$$pyvers setup.py install --install-layout=deb \
+			--root $(CURDIR)/debian/python-cinderclient; \
+	done
+	set -e ; for pyvers in $(PYTHON3S); do \
+		python$$pyvers setup.py install --install-layout=deb \
+			--root $(CURDIR)/debian/python3-cinderclient; \
+	done
+	rm -f $(CURDIR)/debian/python*/usr/lib/python*/dist-packages/*.pth
+	mv $(CURDIR)/debian/python-cinderclient/usr/bin/cinder $(CURDIR)/debian/python-cinderclient/usr/bin/python2-cinder
+	mv $(CURDIR)/debian/python3-cinderclient/usr/bin/cinder $(CURDIR)/debian/python3-cinderclient/usr/bin/python3-cinder
 
 override_dh_install:
 	dh_install
 	install -D -m 0644 tools/cinder.bash_completion $(CURDIR)/debian/python-cinderclient/etc/bash_completion.d/cinder.bash_completion
 
-%:
-	dh $@  --with python2
-
-ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test:
-	./run_tests.sh -P -N
-	#python setup.py testr --slowest --testr-args='--subunit  '
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	@echo "===> Running tests"
+	set -e ; set -x ; for i in 2.7 $(PYTHON3S) ; do \
+		PYMAJOR=`echo $$i | cut -d'.' -f1` ; \
+		echo "===> Testing with python$$i (python$$PYMAJOR)" ; \
+		rm -rf .testrepository ; \
+		testr-python$$PYMAJOR init ; \
+		TEMP_REZ=`mktemp -t` ; \
+		PYTHONPATH=$(CURDIR) PYTHON=python$$i testr-python$$PYMAJOR run --subunit | tee $$TEMP_REZ | subunit2pyunit ; \
+		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats ; \
+		rm -f $$TEMP_REZ ; \
+		testr-python$$PYMAJOR slowest ; \
+	done
 endif
 
 # Commands not to run

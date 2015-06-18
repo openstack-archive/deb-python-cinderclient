@@ -2,7 +2,7 @@ Source: python-cinderclient
 Section: python
 Priority: optional
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
-Uploaders: Thomas Goirand <zigo@debian.org>
+Uploaders: Thomas Goirand <zigo@debian.org>,
 Build-Depends: debhelper (>= 9),
                dh-python,
                openstack-pkg-tools,
@@ -10,6 +10,9 @@ Build-Depends: debhelper (>= 9),
                python-pbr,
                python-setuptools,
                python-sphinx,
+               python3-all,
+               python3-pbr,
+               python3-setuptools,
 Build-Depends-Indep: python-babel,
                      python-coverage,
                      python-fixtures,
@@ -22,9 +25,21 @@ Build-Depends-Indep: python-babel,
                      python-requests-mock (>= 0.6.0),
                      python-simplejson,
                      python-six (>= 1.9.0),
-                     python-testtools,
                      python-tempest-lib (>= 0.5.0),
+                     python-testtools,
                      python-unittest2,
+                     python3-babel,
+                     python3-fixtures,
+                     python3-keystoneclient (>= 1:1.6.0),
+                     python3-mock,
+                     python3-prettytable,
+                     python3-requests (>= 2.5.2),
+                     python3-requests-mock (>= 0.6.0),
+                     python3-simplejson,
+                     python3-six (>= 1.9.0),
+                     python3-subunit,
+                     python3-tempest-lib (>= 0.5.0),
+                     python3-testtools,
                      subunit,
                      testrepository,
 Standards-Version: 3.9.6
@@ -35,7 +50,6 @@ XS-Testsuite: autopkgtest
 
 Package: python-cinderclient
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: python-babel,
          python-keystoneclient (>= 1:1.6.0),
          python-pbr,
@@ -45,8 +59,8 @@ Depends: python-babel,
          python-six (>= 1.9.0),
          ${misc:Depends},
          ${python:Depends},
-Provides: ${python:Provides}
-Description: Python bindings to the OpenStack Volume API
+Provides: ${python:Provides},
+Description: Python bindings to the OpenStack Volume API - Python 2.x
  Cinder is a block storage as service system for the Openstack cloud computing
  software suite. It is a direct replacement for nova-volume as a separate
  project. Cinder users LVM partitions of your volume servers in order to
@@ -56,3 +70,30 @@ Description: Python bindings to the OpenStack Volume API
  This package contains the a client for the OpenStack Volume API. There's a
  Python API (the "cinderclient" module), and a command-line script ("cinder").
  Each implements 100% of the OpenStack Volume API.
+ .
+ This package provides the Python 2.x module.
+
+Package: python3-cinderclient
+Architecture: all
+Depends: python3-babel,
+         python3-keystoneclient (>= 1:1.6.0),
+         python3-pbr,
+         python3-prettytable,
+         python3-requests (>= 2.5.2),
+         python3-simplejson,
+         python3-six (>= 1.9.0),
+         ${misc:Depends},
+         ${python3:Depends},
+Provides: ${python:Provides},
+Description: Python bindings to the OpenStack Volume API - Python 3.x
+ Cinder is a block storage as service system for the Openstack cloud computing
+ software suite. It is a direct replacement for nova-volume as a separate
+ project. Cinder users LVM partitions of your volume servers in order to
+ provide iSCSI permanent block storage devices for your virtual machines
+ running on Nova.
+ .
+ This package contains the a client for the OpenStack Volume API. There's a
+ Python API (the "cinderclient" module), and a command-line script ("cinder").
+ Each implements 100% of the OpenStack Volume API.
+ .
+ This package provides the Python 3.x module.
