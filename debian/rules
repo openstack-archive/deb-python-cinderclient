@@ -30,7 +30,7 @@ override_dh_auto_install:
 
 override_dh_install:
 	dh_install
-	install -D -m 0644 tools/cinder.bash_completion $(CURDIR)/debian/python-cinderclient/etc/bash_completion.d/cinder.bash_completion
+	install -D -m 0644 tools/cinder.bash_completion $(CURDIR)/debian/python-cinderclient/usr/share/bash-completion/completions/cinder.bash_completion
 
 override_dh_auto_test:
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
