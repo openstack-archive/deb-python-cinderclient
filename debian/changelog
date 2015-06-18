@@ -12,6 +12,7 @@ python-cinderclient (1:1.2.2-1) UNRELEASED; urgency=medium
   * Added Python3 support.
   * Swiched to using testr directly when running tests.
   * Moved bash completion to /usr.
+  * Added Corey Bryant <corey.bryant@canonical.com> as Uploaders.
 
  -- Corey Bryant <corey.bryant@canonical.com>  Mon, 08 Jun 2015 10:40:39 -0400
 
