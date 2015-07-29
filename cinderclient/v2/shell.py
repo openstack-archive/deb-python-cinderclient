@@ -234,10 +234,12 @@ def do_list(cs, args):
 
     if all_tenants:
         key_list = ['ID', 'Tenant ID', 'Status', 'Name',
-                    'Size', 'Volume Type', 'Bootable', 'Attached to']
+                    'Size', 'Volume Type', 'Bootable', 'Multiattach',
+                    'Attached to']
     else:
         key_list = ['ID', 'Status', 'Name',
-                    'Size', 'Volume Type', 'Bootable', 'Attached to']
+                    'Size', 'Volume Type', 'Bootable',
+                    'Multiattach', 'Attached to']
     if args.sort_key or args.sort_dir or args.sort:
         sortby_index = None
     else:
@@ -261,8 +263,8 @@ def do_show(cs, args):
 
 class CheckSizeArgForCreate(argparse.Action):
     def __call__(self, parser, args, values, option_string=None):
-        if (values or args.snapshot_id or args.source_volid
-           or args.source_replica) is None:
+        if ((args.snapshot_id or args.source_volid or args.source_replica)
+                is None and values is None):
             parser.error('Size is a required parameter if snapshot '
                          'or source volume is not specified.')
         setattr(args, self.dest, values)
@@ -348,6 +350,12 @@ class CheckSizeArgForCreate(argparse.Action):
            action='append',
            default=[],
            help='Scheduler hint, like in nova.')
+@utils.arg('--allow-multiattach',
+           dest='multiattach',
+           action="store_true",
+           help=('Allow volume to be attached more than once.'
+                 ' Default=False'),
+           default=False)
 @utils.service_type('volumev2')
 def do_create(cs, args):
     """Creates a volume."""
@@ -391,7 +399,8 @@ def do_create(cs, args):
                                imageRef=image_ref,
                                metadata=volume_metadata,
                                scheduler_hints=hints,
-                               source_replica=args.source_replica)
+                               source_replica=args.source_replica,
+                               multiattach=args.multiattach)
 
     info = dict()
     volume = cs.volumes.get(volume.id)
@@ -738,17 +747,9 @@ def _print_volume_type_list(vtypes):
 
 
 @utils.service_type('volumev2')
-@utils.arg('--all',
-           dest='all',
-           action='store_true',
-           default=False,
-           help='Display all volume types (Admin only).')
 def do_type_list(cs, args):
-    """Lists available 'volume types'."""
-    if args.all:
-        vtypes = cs.volume_types.list(is_public=None)
-    else:
-        vtypes = cs.volume_types.list()
+    """Lists available 'volume types'. (Admin only will see private types)"""
+    vtypes = cs.volume_types.list()
     _print_volume_type_list(vtypes)
 
 
@@ -891,7 +892,7 @@ def do_credentials(cs, args):
 
 _quota_resources = ['volumes', 'snapshots', 'gigabytes',
                     'backups', 'backup_gigabytes',
-                    'consistencygroups']
+                    'consistencygroups', 'per_volume_gigabytes']
 _quota_infos = ['Type', 'In_use', 'Reserved', 'Limit']
 
 
@@ -997,6 +998,10 @@ def do_quota_defaults(cs, args):
            metavar='<volume_type_name>',
            default=None,
            help='Volume type. Default=None.')
+@utils.arg('--per-volume-gigabytes',
+           metavar='<per_volume_gigabytes>',
+           type=int, default=None,
+           help='Set max volume size limit. Default=None.')
 @utils.service_type('volumev2')
 def do_quota_update(cs, args):
     """Updates quotas for a tenant."""
@@ -1023,8 +1028,8 @@ def do_quota_class_show(cs, args):
     _quota_show(cs.quota_classes.get(args.class_name))
 
 
-@utils.arg('class-name',
-           metavar='<class-name>',
+@utils.arg('class_name',
+           metavar='<class_name>',
            help='Name of quota class for which to set quotas.')
 @utils.arg('--volumes',
            metavar='<volumes>',
@@ -1545,6 +1550,63 @@ def do_encryption_type_create(cs, args):
 
 
 @utils.arg('volume_type',
+           metavar='<volume-type>',
+           type=str,
+           help="Name or ID of the volume type")
+@utils.arg('--provider',
+           metavar='<provider>',
+           type=str,
+           required=False,
+           default=argparse.SUPPRESS,
+           help="Class providing encryption support (e.g. LuksEncryptor) "
+           "(Optional)")
+@utils.arg('--cipher',
+           metavar='<cipher>',
+           type=str,
+           nargs='?',
+           required=False,
+           default=argparse.SUPPRESS,
+           const=None,
+           help="Encryption algorithm/mode to use (e.g., aes-xts-plain64). "
+           "Provide parameter without value to set to provider default. "
+           "(Optional)")
+@utils.arg('--key-size',
+           dest='key_size',
+           metavar='<key-size>',
+           type=int,
+           nargs='?',
+           required=False,
+           default=argparse.SUPPRESS,
+           const=None,
+           help="Size of the encryption key, in bits (e.g., 128, 256). "
+           "Provide parameter without value to set to provider default. "
+           "(Optional)")
+@utils.arg('--control-location',
+           dest='control_location',
+           metavar='<control-location>',
+           choices=['front-end', 'back-end'],
+           type=str,
+           required=False,
+           default=argparse.SUPPRESS,
+           help="Notional service where encryption is performed (e.g., "
+           "front-end=Nova). Values: 'front-end', 'back-end' (Optional)")
+@utils.service_type('volumev2')
+def do_encryption_type_update(cs, args):
+    """Update encryption type information for a volume type (Admin Only)."""
+    volume_type = _find_volume_type(cs, args.volume_type)
+
+    # An argument should only be pulled if the user specified the parameter.
+    body = {}
+    for attr in ['provider', 'cipher', 'key_size', 'control_location']:
+        if hasattr(args, attr):
+            body[attr] = getattr(args, attr)
+
+    cs.volume_encryption_types.update(volume_type, body)
+    result = cs.volume_encryption_types.get(volume_type)
+    _print_volume_encryption_type_list([result])
+
+
+@utils.arg('volume_type',
            metavar='<volume_type>',
            type=str,
            help='Name or ID of volume type.')
@@ -1841,11 +1903,9 @@ def do_manage(cs, args):
     # dictionary so that it is consistent with what the user specified on the
     # CLI.
 
-    if hasattr(args, 'source_name') and \
-       args.source_name is not None:
+    if hasattr(args, 'source_name') and args.source_name is not None:
         ref_dict['source-name'] = args.source_name
-    if hasattr(args, 'source_id') and \
-       args.source_id is not None:
+    if hasattr(args, 'source_id') and args.source_id is not None:
         ref_dict['source-id'] = args.source_id
 
     volume = cs.volumes.manage(host=args.host,

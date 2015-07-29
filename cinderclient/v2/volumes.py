@@ -45,14 +45,16 @@ class Volume(base.Resource):
         """Update the name or description for this volume."""
         self.manager.update(self, **kwargs)
 
-    def attach(self, instance_uuid, mountpoint, mode='rw'):
+    def attach(self, instance_uuid, mountpoint, mode='rw', host_name=None):
         """Set attachment metadata.
 
         :param instance_uuid: uuid of the attaching instance.
-        :param mountpoint: mountpoint on the attaching instance.
+        :param mountpoint: mountpoint on the attaching instance or host.
         :param mode: the access mode.
+        :param host_name: name of the attaching host.
         """
-        return self.manager.attach(self, instance_uuid, mountpoint, mode)
+        return self.manager.attach(self, instance_uuid, mountpoint, mode,
+                                   host_name)
 
     def detach(self):
         """Clear attachment metadata."""
@@ -177,8 +179,8 @@ class VolumeManager(base.ManagerWithFind):
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
                metadata=None, imageRef=None, scheduler_hints=None,
-               source_replica=None):
-        """Creates a volume.
+               source_replica=None, multiattach=False):
+        """Create a volume.
 
         :param size: Size of volume in GB
         :param consistencygroup_id: ID of the consistencygroup
@@ -195,6 +197,8 @@ class VolumeManager(base.ManagerWithFind):
         :param source_replica: ID of source volume to clone replica
         :param scheduler_hints: (optional extension) arbitrary key-value pairs
                             specified by the client to help boot an instance
+        :param multiattach: Allow the volume to be attached to more than
+                            one instance
         :rtype: :class:`Volume`
         """
         if metadata is None:
@@ -217,6 +221,7 @@ class VolumeManager(base.ManagerWithFind):
                            'imageRef': imageRef,
                            'source_volid': source_volid,
                            'source_replica': source_replica,
+                           'multiattach': multiattach,
                            }}
 
         if scheduler_hints:
@@ -373,28 +378,33 @@ class VolumeManager(base.ManagerWithFind):
         url = '/volumes/%s/action' % base.getid(volume)
         return self.api.client.post(url, body=body)
 
-    def attach(self, volume, instance_uuid, mountpoint, mode='rw'):
+    def attach(self, volume, instance_uuid, mountpoint, mode='rw',
+               host_name=None):
         """Set attachment metadata.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to attach.
         :param instance_uuid: uuid of the attaching instance.
-        :param mountpoint: mountpoint on the attaching instance.
+        :param mountpoint: mountpoint on the attaching instance or host.
         :param mode: the access mode.
+        :param host_name: name of the attaching host.
         """
-        return self._action('os-attach',
-                            volume,
-                            {'instance_uuid': instance_uuid,
-                             'mountpoint': mountpoint,
-                             'mode': mode})
+        body = {'mountpoint': mountpoint, 'mode': mode}
+        if instance_uuid is not None:
+            body.update({'instance_uuid': instance_uuid})
+        if host_name is not None:
+            body.update({'host_name': host_name})
+        return self._action('os-attach', volume, body)
 
-    def detach(self, volume):
+    def detach(self, volume, attachment_uuid=None):
         """Clear attachment metadata.
 
         :param volume: The :class:`Volume` (or its ID)
                        you would like to detach.
+        :param attachment_uuid: The uuid of the volume attachment.
         """
-        return self._action('os-detach', volume)
+        return self._action('os-detach', volume,
+                            {'attachment_id': attachment_uuid})
 
     def reserve(self, volume):
         """Reserve this volume.

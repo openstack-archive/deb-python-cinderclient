@@ -14,7 +14,6 @@
 #    under the License.
 
 import fixtures
-from keystoneclient import fixture as keystone_client_fixture
 import mock
 from requests_mock.contrib import fixture as requests_mock_fixture
 from six.moves.urllib import parse
@@ -22,10 +21,9 @@ from six.moves.urllib import parse
 from cinderclient import client
 from cinderclient import exceptions
 from cinderclient import shell
-from cinderclient.tests.unit.fixture_data import base as fixture_base
-from cinderclient.tests.unit.fixture_data import keystone_client
 from cinderclient.tests.unit import utils
 from cinderclient.tests.unit.v2 import fakes
+from cinderclient.tests.unit.fixture_data import keystone_client
 
 
 class ShellTest(utils.TestCase):
@@ -55,18 +53,7 @@ class ShellTest(utils.TestCase):
         self.requests = self.useFixture(requests_mock_fixture.Fixture())
         self.requests.register_uri(
             'GET', keystone_client.BASE_URL,
-            text=keystone_client.keystone_request_callback
-        )
-        token = keystone_client_fixture.V2Token()
-        s = token.add_service('volume', 'cinder')
-        s.add_endpoint(public='http://127.0.0.1:8776')
-
-        self.requests.post(keystone_client.BASE_URL + 'v2.0/tokens',
-                           json=token)
-        self.requests.get(
-            'http://127.0.0.1:8776',
-            json=fixture_base.generate_version_output()
-        )
+            text=keystone_client.keystone_request_callback)
 
     def tearDown(self):
         # For some methods like test_image_meta_bad_action we are
@@ -125,7 +112,8 @@ class ShellTest(utils.TestCase):
                                'snapshot_id': None,
                                'metadata': {'key1': '"--test1"'},
                                'volume_type': None,
-                               'description': None}}
+                               'description': None,
+                               'multiattach': False}}
         self.assert_called_anytime('POST', '/volumes', expected)
 
     def test_metadata_args_limiter_display_name(self):
@@ -145,7 +133,8 @@ class ShellTest(utils.TestCase):
                                'snapshot_id': None,
                                'metadata': {'key1': '"--t1"'},
                                'volume_type': None,
-                               'description': None}}
+                               'description': None,
+                               'multiattach': False}}
         self.assert_called_anytime('POST', '/volumes', expected)
 
     def test_delimit_metadata_args(self):
@@ -165,7 +154,8 @@ class ShellTest(utils.TestCase):
                                'metadata': {'key1': '"test1"',
                                             'key2': '"test2"'},
                                'volume_type': None,
-                               'description': None}}
+                               'description': None,
+                               'multiattach': False}}
         self.assert_called_anytime('POST', '/volumes', expected)
 
     def test_delimit_metadata_args_display_name(self):
@@ -185,7 +175,8 @@ class ShellTest(utils.TestCase):
                                'snapshot_id': None,
                                'metadata': {'key1': '"t1"'},
                                'volume_type': None,
-                               'description': None}}
+                               'description': None,
+                               'multiattach': False}}
         self.assert_called_anytime('POST', '/volumes', expected)
 
     def test_list_filter_status(self):
@@ -333,6 +324,13 @@ class ShellTest(utils.TestCase):
 
     def test_create_size_required_if_not_snapshot_or_clone(self):
         self.assertRaises(SystemExit, self.run_command, 'create')
+
+    def test_create_size_zero_if_not_snapshot_or_clone(self):
+        expected = {'volume': {'status': 'creating',
+                               'size': 0}}
+        self.run_command('create 0')
+        self.assert_called_anytime('POST', '/volumes', partial_body=expected)
+        self.assert_called('GET', '/volumes/1234')
 
     def test_show(self):
         self.run_command('show 1234')
@@ -496,10 +494,6 @@ class ShellTest(utils.TestCase):
 
     def test_type_list(self):
         self.run_command('type-list')
-        self.assert_called_anytime('GET', '/types')
-
-    def test_type_list_all(self):
-        self.run_command('type-list --all')
         self.assert_called_anytime('GET', '/types?is_public=None')
 
     def test_type_create(self):
@@ -535,6 +529,16 @@ class ShellTest(utils.TestCase):
         self.assert_called('POST', '/types/3/action',
                            body=expected)
 
+    def test_type_access_add_project_by_name(self):
+        expected = {'addProjectAccess': {'project': '101'}}
+        with mock.patch('cinderclient.utils.find_resource') as mock_find:
+            mock_find.return_value = '3'
+            self.run_command('type-access-add --volume-type type_name \
+                              --project-id 101')
+            mock_find.assert_called_once_with(mock.ANY, 'type_name')
+        self.assert_called('POST', '/types/3/action',
+                           body=expected)
+
     def test_type_access_remove_project(self):
         expected = {'removeProjectAccess': {'project': '101'}}
         self.run_command('type-access-remove '
@@ -552,7 +556,7 @@ class ShellTest(utils.TestCase):
         - one per volume type to retrieve the encryption type information
         """
         self.run_command('encryption-type-list')
-        self.assert_called_anytime('GET', '/types')
+        self.assert_called_anytime('GET', '/types?is_public=None')
         self.assert_called_anytime('GET', '/types/1/encryption')
         self.assert_called_anytime('GET', '/types/2/encryption')
 
@@ -592,8 +596,67 @@ class ShellTest(utils.TestCase):
         - one GET request to retrieve the relevant volume type information
         - one GET request to retrieve the relevant encryption type information
         - one PUT request to update the encryption type information
+        Verify that the PUT request correctly parses encryption-type-update
+        parameters from sys.argv
         """
-        self.skipTest("Not implemented")
+        parameters = {'--provider': 'EncryptionProvider', '--cipher': 'des',
+                      '--key-size': 1024, '--control-location': 'back-end'}
+
+        # Construct the argument string for the update call and the
+        # expected encryption-type body that should be produced by it
+        args = ' '.join(['%s %s' % (k, v) for k, v in parameters.items()])
+        expected = {'encryption': {'provider': 'EncryptionProvider',
+                                   'cipher': 'des',
+                                   'key_size': 1024,
+                                   'control_location': 'back-end'}}
+
+        self.run_command('encryption-type-update 1 %s' % args)
+        self.assert_called('GET', '/types/1/encryption')
+        self.assert_called_anytime('GET', '/types/1')
+        self.assert_called_anytime('PUT', '/types/1/encryption/provider',
+                                   body=expected)
+
+    def test_encryption_type_update_no_attributes(self):
+        """
+        Test encryption-type-update shell command.
+
+        Verify two GETs/one PUT requests are made per command invocation:
+        - one GET request to retrieve the relevant volume type information
+        - one GET request to retrieve the relevant encryption type information
+        - one PUT request to update the encryption type information
+        """
+        expected = {'encryption': {}}
+        self.run_command('encryption-type-update 1')
+        self.assert_called('GET', '/types/1/encryption')
+        self.assert_called_anytime('GET', '/types/1')
+        self.assert_called_anytime('PUT', '/types/1/encryption/provider',
+                                   body=expected)
+
+    def test_encryption_type_update_default_attributes(self):
+        """
+        Test encryption-type-update shell command.
+
+        Verify two GETs/one PUT requests are made per command invocation:
+        - one GET request to retrieve the relevant volume type information
+        - one GET request to retrieve the relevant encryption type information
+        - one PUT request to update the encryption type information
+        Verify that the encryption-type body produced contains default None
+        values for all specified parameters.
+        """
+        parameters = ['--cipher', '--key-size']
+
+        # Construct the argument string for the update call and the
+        # expected encryption-type body that should be produced by it
+        args = ' '.join(['%s' % (p) for p in parameters])
+        expected_pairs = [(k.strip('-').replace('-', '_'), None) for k in
+                          parameters]
+        expected = {'encryption': dict(expected_pairs)}
+
+        self.run_command('encryption-type-update 1 %s' % args)
+        self.assert_called('GET', '/types/1/encryption')
+        self.assert_called_anytime('GET', '/types/1')
+        self.assert_called_anytime('PUT', '/types/1/encryption/provider',
+                                   body=expected)
 
     def test_encryption_type_delete(self):
         """

@@ -40,6 +40,7 @@ def _stub_volume(**kwargs):
         "snapshot_id": None,
         "status": "available",
         "volume_type": "None",
+        "multiattach": "false",
         "links": [
             {
                 "href": "http://localhost/v2/fake/volumes/1234",
@@ -411,11 +412,11 @@ class FakeHTTPClient(base_client.HTTPClient):
         assert len(list(body)) == 1
         action = list(body)[0]
         if action == 'os-attach':
-            assert sorted(list(body[action])) == ['instance_uuid',
-                                                  'mode',
-                                                  'mountpoint']
+            keys = sorted(list(body[action]))
+            assert (keys == ['instance_uuid', 'mode', 'mountpoint'] or
+                    keys == ['host_name', 'mode', 'mountpoint'])
         elif action == 'os-detach':
-            assert body[action] is None
+            assert list(body[action]) == ['attachment_id']
         elif action == 'os-reserve':
             assert body[action] is None
         elif action == 'os-unreserve':
@@ -538,7 +539,8 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1,
                           'backups': 1,
                           'backup_gigabytes': 1,
-                          'consistencygroups': 1}})
+                          'consistencygroups': 1,
+                          'per_volume_gigabytes': 1, }})
 
     def get_os_quota_sets_test_defaults(self):
         return (200, {}, {'quota_set': {
@@ -549,7 +551,8 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1,
                           'backups': 1,
                           'backup_gigabytes': 1,
-                          'consistencygroups': 1}})
+                          'consistencygroups': 1,
+                          'per_volume_gigabytes': 1, }})
 
     def put_os_quota_sets_test(self, body, **kw):
         assert list(body) == ['quota_set']
@@ -563,7 +566,8 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1,
                           'backups': 1,
                           'backup_gigabytes': 1,
-                          'consistencygroups': 2}})
+                          'consistencygroups': 2,
+                          'per_volume_gigabytes': 1, }})
 
     def delete_os_quota_sets_1234(self, **kw):
         return (200, {}, {})
@@ -584,7 +588,8 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1,
                           'backups': 1,
                           'backup_gigabytes': 1,
-                          'consistencygroups': 1}})
+                          'consistencygroups': 1,
+                          'per_volume_gigabytes': 1, }})
 
     def put_os_quota_class_sets_test(self, body, **kw):
         assert list(body) == ['quota_class_set']
@@ -598,7 +603,8 @@ class FakeHTTPClient(base_client.HTTPClient):
                           'gigabytes': 1,
                           'backups': 1,
                           'backup_gigabytes': 1,
-                          'consistencygroups': 2}})
+                          'consistencygroups': 2,
+                          'per_volume_gigabytes': 1}})
 
     #
     # VolumeTypes
@@ -692,8 +698,12 @@ class FakeHTTPClient(base_client.HTTPClient):
     def post_types_2_encryption(self, body, **kw):
         return (200, {}, {'encryption': body})
 
-    def put_types_1_encryption_1(self, body, **kw):
-        return (200, {}, {})
+    def put_types_1_encryption_provider(self, body, **kw):
+        get_body = self.get_types_1_encryption()[2]
+        for k, v in body.items():
+            if k in get_body.keys():
+                get_body.update([(k, v)])
+        return (200, {}, get_body)
 
     def delete_types_1_encryption_provider(self, **kw):
         return (202, {}, None)

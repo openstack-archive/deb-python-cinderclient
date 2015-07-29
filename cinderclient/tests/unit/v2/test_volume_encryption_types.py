@@ -36,7 +36,7 @@ class VolumeEncryptionTypesTest(utils.TestCase):
         Verify that all returned information is :class: VolumeEncryptionType
         """
         encryption_types = cs.volume_encryption_types.list()
-        cs.assert_called_anytime('GET', '/types')
+        cs.assert_called_anytime('GET', '/types?is_public=None')
         cs.assert_called_anytime('GET', '/types/2/encryption')
         cs.assert_called_anytime('GET', '/types/1/encryption')
         for encryption_type in encryption_types:
@@ -84,8 +84,18 @@ class VolumeEncryptionTypesTest(utils.TestCase):
     def test_update(self):
         """
         Unit test for VolumeEncryptionTypesManager.update
+
+        Verify that one PUT request is made for encryption type update
+        Verify that an empty encryption-type update returns the original
+        encryption-type information.
         """
-        self.skipTest("Not implemented")
+        expected = {'id': 1, 'volume_type_id': 1, 'provider': 'test',
+                    'cipher': 'test', 'key_size': 1,
+                    'control_location': 'front-end'}
+        result = cs.volume_encryption_types.update(1, {})
+        cs.assert_called('PUT', '/types/1/encryption/provider')
+        self.assertEqual(expected, result,
+                         "empty update must yield original data")
 
     def test_delete(self):
         """
