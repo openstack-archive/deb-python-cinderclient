@@ -160,6 +160,11 @@ def _extract_metadata(args):
            metavar='<status>',
            default=None,
            help='Filters results by a status. Default=None.')
+@utils.arg('--migration_status',
+           metavar='<migration_status>',
+           default=None,
+           help='Filters results by a migration status. Default=None. '
+                'Admin only.')
 @utils.arg('--metadata',
            type=str,
            nargs='*',
@@ -212,6 +217,7 @@ def do_list(cs, args):
         'project_id': args.tenant,
         'name': args.name,
         'status': args.status,
+        'migration_status': args.migration_status,
         'metadata': _extract_metadata(args) if args.metadata else None,
     }
 
@@ -233,18 +239,19 @@ def do_list(cs, args):
         setattr(vol, 'attached_to', ','.join(map(str, servers)))
 
     if all_tenants:
-        key_list = ['ID', 'Tenant ID', 'Status', 'Name',
+        key_list = ['ID', 'Tenant ID', 'Status', 'Migration Status', 'Name',
                     'Size', 'Volume Type', 'Bootable', 'Multiattach',
                     'Attached to']
     else:
-        key_list = ['ID', 'Status', 'Name',
+        key_list = ['ID', 'Status', 'Migration Status', 'Name',
                     'Size', 'Volume Type', 'Bootable',
                     'Multiattach', 'Attached to']
     if args.sort_key or args.sort_dir or args.sort:
         sortby_index = None
     else:
         sortby_index = 0
-    utils.print_list(volumes, key_list, sortby_index=sortby_index)
+    utils.print_list(volumes, key_list, exclude_unavailable=True,
+                     sortby_index=sortby_index)
 
 
 @utils.arg('volume',
@@ -420,6 +427,7 @@ def do_delete(cs, args):
     for volume in args.volume:
         try:
             utils.find_volume(cs, volume).delete()
+            print("Request to delete volume %s has been accepted." % (volume))
         except Exception as e:
             failure_count += 1
             print("Delete for volume %s failed: %s" % (volume, e))
@@ -450,11 +458,22 @@ def do_force_delete(cs, args):
            help='Name or ID of volume to modify.')
 @utils.arg('--state', metavar='<state>', default='available',
            help=('The state to assign to the volume. Valid values are '
-                 '"available," "error," "creating," "deleting," "in-use," '
-                 '"attaching," "detaching" and "error_deleting." '
+                 '"available", "error", "creating", "deleting", "in-use", '
+                 '"attaching", "detaching", "error_deleting" and '
+                 '"maintenance". '
                  'NOTE: This command simply changes the state of the '
                  'Volume in the DataBase with no regard to actual status, '
                  'exercise caution when using. Default=available.'))
+@utils.arg('--attach-status', metavar='<attach-status>', default=None,
+           help=('The attach status to assign to the volume in the DataBase, '
+                 'with no regard to the actual status. Valid values are '
+                 '"attached" and "detached". Default=None, that means the '
+                 'status is unchanged.'))
+@utils.arg('--reset-migration-status',
+           action='store_true',
+           help=('Clears the migration status of the volume in the DataBase '
+                 'that indicates the volume is source or destination of '
+                 'volume migration, with no regard to the actual status.'))
 @utils.service_type('volumev2')
 def do_reset_state(cs, args):
     """Explicitly updates the volume state in the Cinder database.
@@ -466,10 +485,13 @@ def do_reset_state(cs, args):
     unusable in the case of change to the 'available' state.
     """
     failure_flag = False
+    migration_status = 'none' if args.reset_migration_status else None
 
     for volume in args.volume:
         try:
-            utils.find_volume(cs, volume).reset_state(args.state)
+            utils.find_volume(cs, volume).reset_state(args.state,
+                                                      args.attach_status,
+                                                      migration_status)
         except Exception as e:
             failure_flag = True
             msg = "Reset state for volume %s failed: %s" % (volume, e)
@@ -538,6 +560,32 @@ def do_metadata(cs, args):
         # NOTE(zul): Make sure py2/py3 sorting is the same
         cs.volumes.delete_metadata(volume, sorted(metadata.keys(),
                                    reverse=True))
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='Name or ID of volume for which to update metadata.')
+@utils.arg('action',
+           metavar='<action>',
+           choices=['set', 'unset'],
+           help="The action. Valid values are 'set' or 'unset.'")
+@utils.arg('metadata',
+           metavar='<key=value>',
+           nargs='+',
+           default=[],
+           help='Metadata key and value pair to set or unset. '
+           'For unset, specify only the key.')
+@utils.service_type('volumev2')
+def do_image_metadata(cs, args):
+    """Sets or deletes volume image metadata."""
+    volume = utils.find_volume(cs, args.volume)
+    metadata = _extract_metadata(args)
+
+    if args.action == 'set':
+        cs.volumes.set_image_metadata(volume, metadata)
+    elif args.action == 'unset':
+        cs.volumes.delete_image_metadata(volume, sorted(metadata.keys(),
+                                         reverse=True))
 
 
 @utils.arg('--all-tenants',
@@ -714,8 +762,8 @@ def do_snapshot_rename(cs, args):
 @utils.arg('--state', metavar='<state>',
            default='available',
            help=('The state to assign to the snapshot. Valid values are '
-                 '"available," "error," "creating," "deleting," and '
-                 '"error_deleting." NOTE: This command simply changes '
+                 '"available", "error", "creating", "deleting", and '
+                 '"error_deleting". NOTE: This command simply changes '
                  'the state of the Snapshot in the DataBase with no regard '
                  'to actual status, exercise caution when using. '
                  'Default=available.'))
@@ -1126,11 +1174,31 @@ def do_upload_to_image(cs, args):
            help='Enables or disables generic host-based '
            'force-migration, which bypasses driver '
            'optimizations. Default=False.')
+@utils.arg('--lock-volume', metavar='<True|False>',
+           choices=['True', 'False'],
+           required=False,
+           const=True,
+           nargs='?',
+           default=False,
+           help='Enables or disables the termination of volume migration '
+           'caused by other commands. This option applies to the '
+           'available volume. True means it locks the volume '
+           'state and does not allow the migration to be aborted. The '
+           'volume status will be in maintenance during the '
+           'migration. False means it allows the volume migration '
+           'to be aborted. The volume status is still in the original '
+           'status. Default=False.')
 @utils.service_type('volumev2')
 def do_migrate(cs, args):
     """Migrates volume to a new host."""
     volume = utils.find_volume(cs, args.volume)
-    volume.migrate_volume(args.host, args.force_host_copy)
+    try:
+        volume.migrate_volume(args.host, args.force_host_copy,
+                              args.lock_volume)
+        print("Request to migrate volume %s has been accepted." % (volume))
+    except Exception as e:
+        print("Migration for volume %s failed: %s." % (volume,
+                                                       six.text_type(e)))
 
 
 @utils.arg('volume', metavar='<volume>',
@@ -1166,6 +1234,15 @@ def do_retype(cs, args):
            action='store_true',
            help='Incremental backup. Default=False.',
            default=False)
+@utils.arg('--force',
+           action='store_true',
+           help='Allows or disallows backup of a volume '
+           'when the volume is attached to an instance. '
+           'If set to True, backs up the volume whether '
+           'its status is "available" or "in-use". The backup '
+           'of an "in-use" volume means your data is crash '
+           'consistent. Default=False.',
+           default=False)
 @utils.service_type('volumev2')
 def do_backup_create(cs, args):
     """Creates a volume backup."""
@@ -1180,7 +1257,8 @@ def do_backup_create(cs, args):
                                args.container,
                                args.name,
                                args.description,
-                               args.incremental)
+                               args.incremental,
+                               args.force)
 
     info = {"volume_id": volume.id}
     info.update(backup._info)
@@ -1203,10 +1281,45 @@ def do_backup_show(cs, args):
     utils.print_dict(info)
 
 
+@utils.arg('--all-tenants',
+           metavar='<all_tenants>',
+           nargs='?',
+           type=int,
+           const=1,
+           default=0,
+           help='Shows details for all tenants. Admin only.')
+@utils.arg('--all_tenants',
+           nargs='?',
+           type=int,
+           const=1,
+           help=argparse.SUPPRESS)
+@utils.arg('--name',
+           metavar='<name>',
+           default=None,
+           help='Filters results by a name. Default=None.')
+@utils.arg('--status',
+           metavar='<status>',
+           default=None,
+           help='Filters results by a status. Default=None.')
+@utils.arg('--volume-id',
+           metavar='<volume-id>',
+           default=None,
+           help='Filters results by a volume ID. Default=None.')
+@utils.arg('--volume_id',
+           help=argparse.SUPPRESS)
 @utils.service_type('volumev2')
 def do_backup_list(cs, args):
     """Lists all backups."""
-    backups = cs.backups.list()
+
+    search_opts = {
+        'all_tenants': args.all_tenants,
+        'name': args.name,
+        'status': args.status,
+        'volume_id': args.volume_id,
+    }
+
+    backups = cs.backups.list(search_opts=search_opts)
+    _translate_volume_snapshot_keys(backups)
     columns = ['ID', 'Volume ID', 'Status', 'Name', 'Size', 'Object Count',
                'Container']
     utils.print_list(backups, columns)
@@ -1238,7 +1351,15 @@ def do_backup_restore(cs, args):
         volume_id = utils.find_volume(cs, vol).id
     else:
         volume_id = None
-    cs.restores.restore(args.backup, volume_id)
+
+    restore = cs.restores.restore(args.backup, volume_id)
+
+    info = {"backup_id": args.backup}
+    info.update(restore._info)
+
+    info.pop('links', None)
+
+    utils.print_dict(info)
 
 
 @utils.arg('backup', metavar='<backup>',
@@ -1934,7 +2055,9 @@ def do_unmanage(cs, args):
 
 
 @utils.arg('volume', metavar='<volume>',
-           help='Name or ID of the volume to promote.')
+           help='Name or ID of the volume to promote. '
+                'The volume should have the replica volume created with '
+                'source-replica argument.')
 @utils.service_type('volumev2')
 def do_replication_promote(cs, args):
     """Promote a secondary volume to primary for a relationship."""
@@ -1943,7 +2066,8 @@ def do_replication_promote(cs, args):
 
 
 @utils.arg('volume', metavar='<volume>',
-           help='Name or ID of the volume to reenable replication.')
+           help='Name or ID of the volume to reenable replication. '
+                'The replication-status of the volume should be inactive.')
 @utils.service_type('volumev2')
 def do_replication_reenable(cs, args):
     """Sync the secondary volume with primary for a relationship."""
@@ -2017,6 +2141,9 @@ def do_consisgroup_create(cs, args):
 @utils.arg('--cgsnapshot',
            metavar='<cgsnapshot>',
            help='Name or ID of a cgsnapshot. Default=None.')
+@utils.arg('--source-cg',
+           metavar='<source-cg>',
+           help='Name or ID of a source CG. Default=None.')
 @utils.arg('--name',
            metavar='<name>',
            help='Name of a consistency group. Default=None.')
@@ -2025,14 +2152,24 @@ def do_consisgroup_create(cs, args):
            help='Description of a consistency group. Default=None.')
 @utils.service_type('volumev2')
 def do_consisgroup_create_from_src(cs, args):
-    """Creates a consistency group from a cgsnapshot."""
-    if not args.cgsnapshot:
-        msg = ('Cannot create consistency group because the source '
-               'cgsnapshot is not provided.')
+    """Creates a consistency group from a cgsnapshot or a source CG."""
+    if not args.cgsnapshot and not args.source_cg:
+        msg = ('Cannot create consistency group because neither '
+               'cgsnapshot nor source CG is provided.')
         raise exceptions.BadRequest(code=400, message=msg)
-    cgsnapshot = _find_cgsnapshot(cs, args.cgsnapshot)
+    if args.cgsnapshot and args.source_cg:
+        msg = ('Cannot create consistency group because both '
+               'cgsnapshot and source CG are provided.')
+        raise exceptions.BadRequest(code=400, message=msg)
+    cgsnapshot = None
+    if args.cgsnapshot:
+        cgsnapshot = _find_cgsnapshot(cs, args.cgsnapshot)
+    source_cg = None
+    if args.source_cg:
+        source_cg = _find_consistencygroup(cs, args.source_cg)
     info = cs.consistencygroups.create_from_src(
-        cgsnapshot.id,
+        cgsnapshot.id if cgsnapshot else None,
+        source_cg.id if source_cg else None,
         args.name,
         args.description)
 
@@ -2221,3 +2358,20 @@ def do_get_pools(cs, args):
         if args.detail:
             backend.update(info['capabilities'])
         utils.print_dict(backend)
+
+
+@utils.arg('host',
+           metavar='<host>',
+           help='Cinder host to show backend volume stats and properties; '
+                'takes the form: host@backend-name')
+@utils.service_type('volumev2')
+def do_get_capabilities(cs, args):
+    """Show backend volume stats and properties. Admin only."""
+
+    capabilities = cs.capabilities.get(args.host)
+    infos = dict()
+    infos.update(capabilities._info)
+
+    prop = infos.pop('properties', None)
+    utils.print_dict(infos, "Volume stats")
+    utils.print_dict(prop, "Backend properties")

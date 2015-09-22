@@ -449,6 +449,10 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert body[action] is None
         elif action == 'os-reenable-replica':
             assert body[action] is None
+        elif action == 'os-set_image_metadata':
+            assert list(body[action]) == ['metadata']
+        elif action == 'os-unset_image_metadata':
+            assert 'key' in body[action]
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
@@ -1063,3 +1067,20 @@ class FakeHTTPClient(base_client.HTTPClient):
             },
         ]
         return (200, {}, {"pools": stats})
+
+    def get_capabilities_host(self, **kw):
+        return (200, {},
+            {
+                'namespace': 'OS::Storage::Capabilities::fake',
+                'vendor_name': 'OpenStack',
+                'volume_backend_name': 'lvm',
+                'pool_name': 'pool',
+                'storage_protocol': 'iSCSI',
+                'properties': {
+                    'compression': {
+                        'title': 'Compression',
+                        'description': 'Enables compression.',
+                        'type': 'boolean'},
+                }
+            }
+        )

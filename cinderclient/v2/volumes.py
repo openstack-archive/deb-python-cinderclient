@@ -98,6 +98,22 @@ class Volume(base.Resource):
         """
         return self.manager.set_metadata(self, metadata)
 
+    def set_image_metadata(self, volume, metadata):
+        """Set a volume's image metadata.
+
+        :param volume : The :class: `Volume` to set metadata on
+        :param metadata: A dict of key/value pairs to set
+        """
+        return self.manager.set_image_metadata(self, volume, metadata)
+
+    def delete_image_metadata(self, volume, keys):
+        """Delete specified keys from volume's image metadata.
+
+        :param volume: The :class:`Volume`.
+        :param keys: A list of keys to be removed.
+        """
+        return self.manager.delete_image_metadata(self, volume, keys)
+
     def upload_to_image(self, force, image_name, container_format,
                         disk_format):
         """Upload a volume to image service as an image."""
@@ -111,9 +127,16 @@ class Volume(base.Resource):
         """
         self.manager.force_delete(self)
 
-    def reset_state(self, state):
-        """Update the volume with the provided state."""
-        self.manager.reset_state(self, state)
+    def reset_state(self, state, attach_status=None, migration_status=None):
+        """Update the volume with the provided state.
+
+        :param state: The state of the volume to set.
+        :param attach_status: The attach_status of the volume to be set,
+                              or None to keep the current status.
+        :param migration_status: The migration_status of the volume to be set,
+                                 or None to keep the current status.
+        """
+        self.manager.reset_state(self, state, attach_status, migration_status)
 
     def extend(self, volume, new_size):
         """Extend the size of the specified volume.
@@ -123,9 +146,9 @@ class Volume(base.Resource):
         """
         self.manager.extend(self, new_size)
 
-    def migrate_volume(self, host, force_host_copy):
+    def migrate_volume(self, host, force_host_copy, lock_volume):
         """Migrate the volume to a new host."""
-        self.manager.migrate_volume(self, host, force_host_copy)
+        self.manager.migrate_volume(self, host, force_host_copy, lock_volume)
 
     def retype(self, volume_type, policy):
         """Change a volume's type."""
@@ -475,6 +498,26 @@ class VolumeManager(base.ManagerWithFind):
         for k in keys:
             self._delete("/volumes/%s/metadata/%s" % (base.getid(volume), k))
 
+    def set_image_metadata(self, volume, metadata):
+        """Set a volume's image metadata.
+
+        :param volume: The :class:`Volume`.
+        :param metadata: keys and the values to be set with.
+        :type metadata: dict
+        """
+        return self._action("os-set_image_metadata", volume,
+                            {'metadata': metadata})
+
+    def delete_image_metadata(self, volume, keys):
+        """Delete specified keys from volume's image metadata.
+
+        :param volume: The :class:`Volume`.
+        :param keys: A list of keys to be removed.
+        """
+        for key in keys:
+            self._action("os-unset_image_metadata", volume,
+                         {'key': key})
+
     def upload_to_image(self, volume, force, image_name, container_format,
                         disk_format):
         """Upload volume to image service as image.
@@ -495,9 +538,23 @@ class VolumeManager(base.ManagerWithFind):
         """
         return self._action('os-force_delete', base.getid(volume))
 
-    def reset_state(self, volume, state):
-        """Update the provided volume with the provided state."""
-        return self._action('os-reset_status', volume, {'status': state})
+    def reset_state(self, volume, state, attach_status=None,
+                    migration_status=None):
+        """Update the provided volume with the provided state.
+
+        :param volume: The :class:`Volume` to set the state.
+        :param state: The state of the volume to be set.
+        :param attach_status: The attach_status of the volume to be set,
+                              or None to keep the current status.
+        :param migration_status: The migration_status of the volume to be set,
+                                 or None to keep the current status.
+        """
+        body = {'status': state}
+        if attach_status:
+            body.update({'attach_status': attach_status})
+        if migration_status:
+            body.update({'migration_status': migration_status})
+        return self._action('os-reset_status', volume, body)
 
     def extend(self, volume, new_size):
         """Extend the size of the specified volume.
@@ -518,16 +575,19 @@ class VolumeManager(base.ManagerWithFind):
         """
         return self._get("/volumes/%s/encryption" % volume_id)._info
 
-    def migrate_volume(self, volume, host, force_host_copy):
+    def migrate_volume(self, volume, host, force_host_copy, lock_volume):
         """Migrate volume to new host.
 
         :param volume: The :class:`Volume` to migrate
         :param host: The destination host
         :param force_host_copy: Skip driver optimizations
+        :param lock_volume: Lock the volume and guarantee the migration
+                            to finish
         """
         return self._action('os-migrate_volume',
                             volume,
-                            {'host': host, 'force_host_copy': force_host_copy})
+                            {'host': host, 'force_host_copy': force_host_copy,
+                             'lock_volume': lock_volume})
 
     def migrate_volume_completion(self, old_volume, new_volume, error):
         """Complete the migration from the old volume to the temp new one.

@@ -160,14 +160,31 @@ class VolumesTest(utils.TestCase):
         cs.volumes.extend(v, 2)
         cs.assert_called('POST', '/volumes/1234/action')
 
+    def test_reset_state(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.reset_state(v, 'in-use', attach_status='detached',
+                               migration_status='none')
+        cs.assert_called('POST', '/volumes/1234/action')
+
     def test_get_encryption_metadata(self):
         cs.volumes.get_encryption_metadata('1234')
         cs.assert_called('GET', '/volumes/1234/encryption')
 
     def test_migrate(self):
         v = cs.volumes.get('1234')
-        cs.volumes.migrate_volume(v, 'dest', False)
-        cs.assert_called('POST', '/volumes/1234/action')
+        cs.volumes.migrate_volume(v, 'dest', False, False)
+        cs.assert_called('POST', '/volumes/1234/action',
+                         {'os-migrate_volume': {'host': 'dest',
+                                                'force_host_copy': False,
+                                                'lock_volume': False}})
+
+    def test_migrate_with_lock_volume(self):
+        v = cs.volumes.get('1234')
+        cs.volumes.migrate_volume(v, 'dest', False, True)
+        cs.assert_called('POST', '/volumes/1234/action',
+                         {'os-migrate_volume': {'host': 'dest',
+                                                'force_host_copy': False,
+                                                'lock_volume': True}})
 
     def test_metadata_update_all(self):
         cs.volumes.update_all_metadata(1234, {'k1': 'v1'})
@@ -235,7 +252,7 @@ class FormatSortParamTestCase(utils.TestCase):
 
     def test_format_sort_empty_input(self):
         for s in [None, '', []]:
-            self.assertEqual(None, cs.volumes._format_sort_param(s))
+            self.assertIsNone(cs.volumes._format_sort_param(s))
 
     def test_format_sort_string_single_key(self):
         s = 'id'

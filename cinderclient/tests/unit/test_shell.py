@@ -113,22 +113,26 @@ class ShellTest(utils.TestCase):
         v2_url, v3_url = _shell._discover_auth_versions(
             None, auth_url=os_auth_url)
         self.assertEqual(v2_url, os_auth_url, "Expected v2 url")
-        self.assertEqual(v3_url, None, "Expected no v3 url")
+        self.assertIsNone(v3_url, "Expected no v3 url")
 
         os_auth_url = "https://DiscoveryNotSupported.discovery.com:35357/v3.0"
         self.register_keystone_auth_fixture(mocker, os_auth_url)
         v2_url, v3_url = _shell._discover_auth_versions(
             None, auth_url=os_auth_url)
         self.assertEqual(v3_url, os_auth_url, "Expected v3 url")
-        self.assertEqual(v2_url, None, "Expected no v2 url")
+        self.assertIsNone(v2_url, "Expected no v2 url")
 
+    @mock.patch('keystoneclient.adapter.Adapter.get_token',
+                side_effect=ks_exc.ConnectionRefused())
+    @mock.patch('keystoneclient.discover.Discover',
+                side_effect=ks_exc.ConnectionRefused())
     @mock.patch('sys.stdin', side_effect=mock.MagicMock)
     @mock.patch('getpass.getpass', return_value='password')
-    def test_password_prompted(self, mock_getpass, mock_stdin):
+    def test_password_prompted(self, mock_getpass, mock_stdin, mock_discover,
+                               mock_token):
         self.make_env(exclude='OS_PASSWORD')
-        # We should get a Connection Refused because there is no keystone.
-        self.assertRaises(ks_exc.ConnectionRefused, self.shell, 'list')
-        # Make sure we are actually prompted.
+        _shell = shell.OpenStackCinderShell()
+        self.assertRaises(ks_exc.ConnectionRefused, _shell.main, ['list'])
         mock_getpass.assert_called_with('OS Password: ')
 
     @mock.patch.object(requests, "request")
@@ -167,7 +171,7 @@ class ShellTest(utils.TestCase):
         token_url = _shell.cs.client.auth_url + "/tokens"
         self.assertEqual(non_keystone_auth_url + "/tokens", token_url)
 
-        mock_request.assert_any_called(
+        mock_request.assert_any_call(
             "POST",
             token_url,
             headers=headers,

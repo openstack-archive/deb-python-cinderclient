@@ -21,6 +21,8 @@ from six.moves.urllib import parse
 from cinderclient import client
 from cinderclient import exceptions
 from cinderclient import shell
+from cinderclient.v2 import volumes
+from cinderclient.v2 import shell as test_shell
 from cinderclient.tests.unit import utils
 from cinderclient.tests.unit.v2 import fakes
 from cinderclient.tests.unit.fixture_data import keystone_client
@@ -54,6 +56,15 @@ class ShellTest(utils.TestCase):
         self.requests.register_uri(
             'GET', keystone_client.BASE_URL,
             text=keystone_client.keystone_request_callback)
+
+        self.cs = mock.Mock()
+
+    def _make_args(self, args):
+        class Args(object):
+            def __init__(self, entries):
+                self.__dict__.update(entries)
+
+        return Args(args)
 
     def tearDown(self):
         # For some methods like test_image_meta_bad_action we are
@@ -265,7 +276,8 @@ class ShellTest(utils.TestCase):
             with mock.patch('cinderclient.utils.print_list') as mock_print:
                 self.run_command(cmd)
                 mock_print.assert_called_once_with(
-                    mock.ANY, mock.ANY, sortby_index=None)
+                    mock.ANY, mock.ANY, exclude_unavailable=True,
+                    sortby_index=None)
 
     def test_list_reorder_without_sort(self):
         # sortby_index is 0 without sort information
@@ -273,7 +285,8 @@ class ShellTest(utils.TestCase):
             with mock.patch('cinderclient.utils.print_list') as mock_print:
                 self.run_command(cmd)
                 mock_print.assert_called_once_with(
-                    mock.ANY, mock.ANY, sortby_index=0)
+                    mock.ANY, mock.ANY, exclude_unavailable=True,
+                    sortby_index=0)
 
     def test_list_availability_zone(self):
         self.run_command('availability-zone-list')
@@ -359,9 +372,37 @@ class ShellTest(utils.TestCase):
         self.run_command('backup-create 1234 --incremental')
         self.assert_called('POST', '/backups')
 
+    def test_backup_force(self):
+        self.run_command('backup-create 1234 --force')
+        self.assert_called('POST', '/backups')
+
     def test_restore(self):
         self.run_command('backup-restore 1234')
         self.assert_called('POST', '/backups/1234/restore')
+
+    @mock.patch('cinderclient.utils.print_dict')
+    @mock.patch('cinderclient.utils.find_volume')
+    def test_do_backup_restore(self,
+                               mock_find_volume,
+                               mock_print_dict):
+        backup_id = '1234'
+        volume_id = '5678'
+        input = {
+            'backup': backup_id,
+            'volume': volume_id
+        }
+
+        args = self._make_args(input)
+        with mock.patch.object(self.cs.restores,
+                               'restore') as mocked_restore:
+            mock_find_volume.return_value = volumes.Volume(self,
+                                                           {'id': volume_id},
+                                                           loaded = True)
+            test_shell.do_backup_restore(self.cs, args)
+            mocked_restore.assert_called_once_with(
+                input['backup'],
+                volume_id)
+            self.assertTrue(mock_print_dict.called)
 
     def test_record_export(self):
         self.run_command('backup-export 1234')
@@ -453,6 +494,25 @@ class ShellTest(utils.TestCase):
     def test_reset_state_with_flag(self):
         self.run_command('reset-state --state error 1234')
         expected = {'os-reset_status': {'status': 'error'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+    def test_reset_state_with_attach_status(self):
+        self.run_command('reset-state --attach-status detached 1234')
+        expected = {'os-reset_status': {'status': 'available',
+                                        'attach_status': 'detached'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+    def test_reset_state_with_attach_status_with_flag(self):
+        self.run_command('reset-state --state in-use '
+                         '--attach-status attached 1234')
+        expected = {'os-reset_status': {'status': 'in-use',
+                                        'attach_status': 'attached'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+    def test_reset_state_with_reset_migration_status(self):
+        self.run_command('reset-state --reset-migration-status 1234')
+        expected = {'os-reset_status': {'status': 'available',
+                                        'migration_status': 'none'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_reset_state_multiple(self):
@@ -671,16 +731,37 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('GET', '/types/1')
 
     def test_migrate_volume(self):
-        self.run_command('migrate 1234 fakehost --force-host-copy=True')
+        self.run_command('migrate 1234 fakehost --force-host-copy=True '
+                         '--lock-volume=True')
         expected = {'os-migrate_volume': {'force_host_copy': 'True',
+                                          'lock_volume': 'True',
                                           'host': 'fakehost'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_migrate_volume_bool_force(self):
-        self.run_command('migrate 1234 fakehost --force-host-copy')
+        self.run_command('migrate 1234 fakehost --force-host-copy '
+                         '--lock-volume')
         expected = {'os-migrate_volume': {'force_host_copy': True,
+                                          'lock_volume': True,
                                           'host': 'fakehost'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+    def test_migrate_volume_bool_force_false(self):
+        # Set both --force-host-copy and --lock-volume to False.
+        self.run_command('migrate 1234 fakehost --force-host-copy=False '
+                         '--lock-volume=False')
+        expected = {'os-migrate_volume': {'force_host_copy': 'False',
+                                          'lock_volume': 'False',
+                                          'host': 'fakehost'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+        # Do not set the values to --force-host-copy and --lock-volume.
+        self.run_command('migrate 1234 fakehost')
+        expected = {'os-migrate_volume': {'force_host_copy': False,
+                                          'lock_volume': False,
+                                          'host': 'fakehost'}}
+        self.assert_called('POST', '/volumes/1234/action',
+                           body=expected)
 
     def test_snapshot_metadata_set(self):
         self.run_command('snapshot-metadata 1234 set key1=val1 key2=val2')
@@ -913,7 +994,7 @@ class ShellTest(utils.TestCase):
                           self.run_command,
                           'consisgroup-update 1234')
 
-    def test_consistencygroup_create_from_src(self):
+    def test_consistencygroup_create_from_src_snap(self):
         self.run_command('consisgroup-create-from-src '
                          '--name cg '
                          '--cgsnapshot 1234')
@@ -924,14 +1005,89 @@ class ShellTest(utils.TestCase):
                 'description': None,
                 'user_id': None,
                 'project_id': None,
-                'status': 'creating'
+                'status': 'creating',
+                'source_cgid': None
             }
         }
         self.assert_called('POST', '/consistencygroups/create_from_src',
                            expected)
 
-    def test_consistencygroup_create_from_src_bad_request(self):
+    def test_consistencygroup_create_from_src_cg(self):
+        self.run_command('consisgroup-create-from-src '
+                         '--name cg '
+                         '--source-cg 1234')
+        expected = {
+            'consistencygroup-from-src': {
+                'name': 'cg',
+                'cgsnapshot_id': None,
+                'description': None,
+                'user_id': None,
+                'project_id': None,
+                'status': 'creating',
+                'source_cgid': '1234'
+            }
+        }
+        self.assert_called('POST', '/consistencygroups/create_from_src',
+                           expected)
+
+    def test_consistencygroup_create_from_src_fail_no_snap_cg(self):
         self.assertRaises(exceptions.BadRequest,
                           self.run_command,
                           'consisgroup-create-from-src '
                           '--name cg')
+
+    def test_consistencygroup_create_from_src_fail_both_snap_cg(self):
+        self.assertRaises(exceptions.BadRequest,
+                          self.run_command,
+                          'consisgroup-create-from-src '
+                          '--name cg '
+                          '--cgsnapshot 1234 '
+                          '--source-cg 5678')
+
+    def test_set_image_metadata(self):
+        self.run_command('image-metadata 1234 set key1=val1')
+        expected = {"os-set_image_metadata": {"metadata": {"key1": "val1"}}}
+        self.assert_called('POST', '/volumes/1234/action',
+                           body=expected)
+
+    def test_unset_image_metadata(self):
+        self.run_command('image-metadata 1234 unset key1')
+        expected = {"os-unset_image_metadata": {"key": "key1"}}
+        self.assert_called('POST', '/volumes/1234/action',
+                           body=expected)
+
+    def _get_params_from_stack(self, pos=-1):
+        method, url = self.shell.cs.client.callstack[pos][0:2]
+        path, query = parse.splitquery(url)
+        params = parse.parse_qs(query)
+        return path, params
+
+    def test_backup_list_all_tenants(self):
+        self.run_command('backup-list --all-tenants=1 --name=bc '
+                         '--status=available --volume-id=1234')
+        expected = {
+            'all_tenants': ['1'],
+            'name': ['bc'],
+            'status': ['available'],
+            'volume_id': ['1234'],
+        }
+
+        path, params = self._get_params_from_stack()
+
+        self.assertEqual('/backups/detail', path)
+        self.assertEqual(4, len(params))
+
+        for k in params.keys():
+            self.assertEqual(expected[k], params[k])
+
+    def test_backup_list_volume_id(self):
+        self.run_command('backup-list --volume-id=1234')
+        self.assert_called('GET', '/backups/detail?volume_id=1234')
+
+    def test_backup_list(self):
+        self.run_command('backup-list')
+        self.assert_called('GET', '/backups/detail')
+
+    def test_get_capabilities(self):
+        self.run_command('get-capabilities host')
+        self.assert_called('GET', '/capabilities/host')
