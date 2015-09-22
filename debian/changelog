@@ -1,3 +1,9 @@
+python-cinderclient (1:1.4.0-2) experimental; urgency=medium
+
+  * Unit test failures are now failing the build.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 22 Sep 2015 08:42:45 +0000
+
 python-cinderclient (1:1.4.0-1) experimental; urgency=medium
 
   * New upstream release.
