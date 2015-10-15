@@ -1,6 +1,7 @@
 python-cinderclient (1:1.4.0-3) unstable; urgency=medium
 
   * Uploading to unstable.
+  * Do not run unit tests with Python 3.5 as it's broken.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 15 Oct 2015 21:37:17 +0000
 
