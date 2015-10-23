@@ -28,6 +28,9 @@ override_dh_auto_install:
 	mv $(CURDIR)/debian/python-cinderclient/usr/bin/cinder $(CURDIR)/debian/python-cinderclient/usr/bin/python2-cinder
 	mv $(CURDIR)/debian/python3-cinderclient/usr/bin/cinder $(CURDIR)/debian/python3-cinderclient/usr/bin/python3-cinder
 
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3
+
 override_dh_install:
 	dh_install
 	install -D -m 0644 tools/cinder.bash_completion $(CURDIR)/debian/python-cinderclient/usr/share/bash-completion/completions/cinder.bash_completion
