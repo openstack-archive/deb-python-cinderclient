@@ -16,13 +16,11 @@
 """
 Volume Backups interface (1.1 extension).
 """
-from six.moves.urllib.parse import urlencode
 from cinderclient import base
 
 
 class VolumeBackup(base.Resource):
     """A volume backup is a block level backup of a volume."""
-    NAME_ATTR = "display_name"
 
     def __repr__(self):
         return "<VolumeBackup: %s>" % self.id
@@ -30,6 +28,9 @@ class VolumeBackup(base.Resource):
     def delete(self):
         """Delete this volume backup."""
         return self.manager.delete(self)
+
+    def reset_state(self, state):
+        self.manager.reset_state(self, state)
 
 
 class VolumeBackupManager(base.ManagerWithFind):
@@ -65,21 +66,17 @@ class VolumeBackupManager(base.ManagerWithFind):
         """
         return self._get("/backups/%s" % backup_id, "backup")
 
-    def list(self, detailed=True, search_opts=None):
+    def list(self, detailed=True, search_opts=None, marker=None, limit=None,
+             sort=None):
         """Get a list of all volume backups.
 
         :rtype: list of :class:`VolumeBackup`
         """
-        search_opts = search_opts or {}
-
-        qparams = dict((key, val) for key, val in search_opts.items() if val)
-
-        query_string = ("?%s" % urlencode(qparams)) if qparams else ""
-
-        detail = '/detail' if detailed else ''
-
-        return self._list("/backups%s%s" % (detail, query_string),
-                          "backups")
+        resource_type = "backups"
+        url = self._build_list_url(resource_type, detailed=detailed,
+                                   search_opts=search_opts, marker=marker,
+                                   limit=limit, sort=sort)
+        return self._list(url, resource_type, limit=limit)
 
     def delete(self, backup):
         """Delete a volume backup.
@@ -87,6 +84,17 @@ class VolumeBackupManager(base.ManagerWithFind):
         :param backup: The :class:`VolumeBackup` to delete.
         """
         self._delete("/backups/%s" % base.getid(backup))
+
+    def reset_state(self, backup, state):
+        """Update the specified volume backup with the provided state."""
+        return self._action('os-reset_status', backup, {'status': state})
+
+    def _action(self, action, backup, info=None, **kwargs):
+        """Perform a volume backup action."""
+        body = {action: info}
+        self.run_hooks('modify_body_for_action', body, **kwargs)
+        url = '/backups/%s/action' % base.getid(backup)
+        return self.api.client.post(url, body=body)
 
     def export_record(self, backup_id):
         """Export volume backup metadata record.

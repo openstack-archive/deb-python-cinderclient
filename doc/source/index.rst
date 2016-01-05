@@ -33,6 +33,37 @@ Release Notes
 MASTER
 -----
 
+1.4.0
+-----
+
+* Improved error reporting on reaching quota.
+* Volume status management for volume migration.
+* Added command to fetch specified backend capabilities.
+* Added commands for modifying image metadata.
+* Support for non-disruptive backup.
+* Support for cloning consistency groups.
+
+.. _1493612 https://bugs.launchpad.net/python-cinderclient/+bug/1493612
+.. _1482988 https://bugs.launchpad.net/python-cinderclient/+bug/1482988
+.. _1422046 https://bugs.launchpad.net/python-cinderclient/+bug/1422046
+.. _1481478 https://bugs.launchpad.net/python-cinderclient/+bug/1481478
+.. _1475430 https://bugs.launchpad.net/python-cinderclient/+bug/1475430
+
+1.3.1
+-----
+
+* Fixed usage of the --debug option.
+* Documentation and API example improvements.
+* Set max volume size limit for the tenant.
+* Added encryption-type-update to cinderclient.
+* Added volume multi attach support.
+* Support host-attach of volumes.
+
+.. _1467628 https://bugs.launchpad.net/python-cinderclient/+bug/1467628
+.. _1454436 https://bugs.launchpad.net/cinder/+bug/1454436
+.. _1423884 https://bugs.launchpad.net/python-cinderclient/+bug/1423884
+.. _1462104 https://bugs.launchpad.net/cinder/+bug/1462104
+
 1.3.0
 -----
 
@@ -48,16 +79,18 @@ MASTER
 .. _1418580 http://bugs.launchpad.net/python-cinderclient/+bug/1418580
 .. _1464160 http://bugs.launchpad.net/python-cinderclient/+bug/1464160
 
-
-
 1.2.2
 -----
 
+* IMPORTANT: version discovery breaks deployments using proxies and has been
+  reverted in v1.3.0 . Do not use this version.
 * Update requirements to resolve conflicts with other OpenStack projects
 
 1.2.1
 -----
 
+* IMPORTANT: version discovery breaks deployments using proxies and has been
+  reverted in v1.3.0 . Do not use this version.
 * Remove warnings about Keystone unable to contact endpoint for discovery.
 * backup-create subcommand allows specifying --incremental to do an incremental
   backup.
@@ -77,6 +110,8 @@ MASTER
 1.2.0
 -----
 
+* IMPORTANT: version discovery breaks deployments using proxies and has been
+  reverted in v1.3.0 . Do not use this version.
 * Add metadata during snapshot create.
 * Add TTY password entry when no password is environment vars or --os-password.
 * Ability to set backup quota in quota-update subcommand.

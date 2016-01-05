@@ -38,7 +38,6 @@ from cinderclient import utils
 import cinderclient.auth_plugin
 import cinderclient.extension
 from cinderclient.openstack.common import importutils
-from cinderclient.openstack.common import strutils
 from cinderclient.openstack.common.gettextutils import _
 from cinderclient.v1 import shell as shell_v1
 from cinderclient.v2 import shell as shell_v2
@@ -49,6 +48,8 @@ from keystoneclient.auth.identity import v2 as v2_auth
 from keystoneclient.auth.identity import v3 as v3_auth
 from keystoneclient.exceptions import DiscoveryFailure
 import six.moves.urllib.parse as urlparse
+from oslo_utils import encodeutils
+from oslo_utils import strutils
 
 osprofiler_profiler = importutils.try_import("osprofiler.profiler")
 
@@ -161,20 +162,10 @@ class OpenStackCinderShell(object):
         parser.add_argument('--volume_service_name',
                             help=argparse.SUPPRESS)
 
-        parser.add_argument('--endpoint-type',
-                            metavar='<endpoint-type>',
-                            dest='os_endpoint_type',
-                            default=utils.env('CINDER_ENDPOINT_TYPE',
-                            default=DEFAULT_CINDER_ENDPOINT_TYPE),
-                            help='DEPRECATED! Use --os-endpoint-type.')
-        parser.add_argument('--endpoint_type',
-                            dest='os_endpoint_type',
-                            help=argparse.SUPPRESS)
-
         parser.add_argument('--os-endpoint-type',
                             metavar='<os-endpoint-type>',
-                            default=utils.env('OS_ENDPOINT_TYPE',
                             default=utils.env('CINDER_ENDPOINT_TYPE',
+                            default=utils.env('OS_ENDPOINT_TYPE',
                             default=DEFAULT_CINDER_ENDPOINT_TYPE)),
                             help='Endpoint type, which is publicURL or '
                             'internalURL. '
@@ -182,6 +173,13 @@ class OpenStackCinderShell(object):
                             'nova env[CINDER_ENDPOINT_TYPE] or '
                             + DEFAULT_CINDER_ENDPOINT_TYPE + '.')
         parser.add_argument('--os_endpoint_type',
+                            help=argparse.SUPPRESS)
+        parser.add_argument('--endpoint-type',
+                            metavar='<endpoint-type>',
+                            dest='endpoint_type',
+                            help='DEPRECATED! Use --os-endpoint-type.')
+        parser.add_argument('--endpoint_type',
+                            dest='endpoint_type',
                             help=argparse.SUPPRESS)
 
         parser.add_argument('--os-volume-api-version',
@@ -200,7 +198,7 @@ class OpenStackCinderShell(object):
                             default=utils.env('CINDERCLIENT_BYPASS_URL'),
                             help="Use this API endpoint instead of the "
                             "Service Catalog. Defaults to "
-                            "env[CINDERCLIENT_BYPASS_URL]")
+                            "env[CINDERCLIENT_BYPASS_URL].")
         parser.add_argument('--bypass_url',
                             help=argparse.SUPPRESS)
 
@@ -241,7 +239,7 @@ class OpenStackCinderShell(object):
             default=utils.env('OS_AUTH_STRATEGY', default='keystone'),
             help=_('Authentication strategy (Env: OS_AUTH_STRATEGY'
                    ', default keystone). For now, any other value will'
-                   ' disable the authentication'))
+                   ' disable the authentication.'))
         parser.add_argument(
             '--os_auth_strategy',
             help=argparse.SUPPRESS)
@@ -294,7 +292,7 @@ class OpenStackCinderShell(object):
         parser.add_argument(
             '--os-user-id', metavar='<auth-user-id>',
             default=utils.env('OS_USER_ID'),
-            help=_('Authentication user ID (Env: OS_USER_ID)'))
+            help=_('Authentication user ID (Env: OS_USER_ID).'))
 
         parser.add_argument(
             '--os_user_id',
@@ -372,7 +370,7 @@ class OpenStackCinderShell(object):
         parser.add_argument(
             '--os-token', metavar='<token>',
             default=utils.env('OS_TOKEN'),
-            help=_('Defaults to env[OS_TOKEN]'))
+            help=_('Defaults to env[OS_TOKEN].'))
         parser.add_argument(
             '--os_token',
             help=argparse.SUPPRESS)
@@ -380,7 +378,7 @@ class OpenStackCinderShell(object):
         parser.add_argument(
             '--os-url', metavar='<url>',
             default=utils.env('OS_URL'),
-            help=_('Defaults to env[OS_URL]'))
+            help=_('Defaults to env[OS_URL].'))
         parser.add_argument(
             '--os_url',
             help=argparse.SUPPRESS)
@@ -905,7 +903,7 @@ def main():
         if sys.version_info >= (3, 0):
             OpenStackCinderShell().main(sys.argv[1:])
         else:
-            OpenStackCinderShell().main(map(strutils.safe_decode,
+            OpenStackCinderShell().main(map(encodeutils.safe_decode,
                                             sys.argv[1:]))
     except KeyboardInterrupt:
         print("... terminating cinder client", file=sys.stderr)

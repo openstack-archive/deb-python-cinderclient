@@ -25,9 +25,9 @@ import sys
 import time
 
 from cinderclient import exceptions
-from cinderclient.openstack.common import strutils
 from cinderclient import utils
 from cinderclient.v1 import availability_zones
+from oslo_utils import strutils
 
 
 def _poll_for_status(poll_fn, obj_id, action, final_ok_states,
@@ -214,7 +214,7 @@ def do_show(cs, args):
 @utils.arg('size',
            metavar='<size>',
            type=int,
-           help='Volume size, in GBs.')
+           help='Volume size, in GiBs.')
 @utils.arg(
     '--snapshot-id',
     metavar='<snapshot-id>',
@@ -1039,7 +1039,7 @@ def do_transfer_show(cs, args):
 @utils.arg('new_size',
            metavar='<new-size>',
            type=int,
-           help='Size of volume, in GBs.')
+           help='Size of volume, in GiBs.')
 @utils.service_type('volume')
 def do_extend(cs, args):
     """Attempts to extend size of an existing volume."""
@@ -1225,11 +1225,12 @@ def do_encryption_type_create(cs, args):
     """Creates encryption type for a volume type. Admin only."""
     volume_type = _find_volume_type(cs, args.volume_type)
 
-    body = {}
-    body['provider'] = args.provider
-    body['cipher'] = args.cipher
-    body['key_size'] = args.key_size
-    body['control_location'] = args.control_location
+    body = {
+        'provider': args.provider,
+        'cipher': args.cipher,
+        'key_size': args.key_size,
+        'control_location': args.control_location
+    }
 
     result = cs.volume_encryption_types.create(volume_type, body)
     _print_volume_encryption_type_list([result])

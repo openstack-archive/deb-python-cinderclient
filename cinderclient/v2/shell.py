@@ -24,11 +24,11 @@ import time
 
 import six
 
+from cinderclient import base
 from cinderclient import exceptions
 from cinderclient import utils
-from cinderclient.openstack.common import strutils
 from cinderclient.v2 import availability_zones
-from cinderclient.v2 import volumes
+from oslo_utils import strutils
 
 
 def _poll_for_status(poll_fn, obj_id, action, final_ok_states,
@@ -64,6 +64,11 @@ def _poll_for_status(poll_fn, obj_id, action, final_ok_states,
 def _find_volume_snapshot(cs, snapshot):
     """Gets a volume snapshot by name or ID."""
     return utils.find_resource(cs.volume_snapshots, snapshot)
+
+
+def _find_vtype(cs, vtype):
+    """Gets a volume type by name or ID."""
+    return utils.find_resource(cs.volume_types, vtype)
 
 
 def _find_backup(cs, backup):
@@ -196,7 +201,7 @@ def _extract_metadata(args):
            help=(('Comma-separated list of sort keys and directions in the '
                   'form of <key>[:<asc|desc>]. '
                   'Valid keys: %s. '
-                  'Default=None.') % ', '.join(volumes.SORT_KEY_VALUES)))
+                  'Default=None.') % ', '.join(base.SORT_KEY_VALUES)))
 @utils.arg('--tenant',
            type=str,
            dest='tenant',
@@ -282,7 +287,7 @@ class CheckSizeArgForCreate(argparse.Action):
            nargs='?',
            type=int,
            action=CheckSizeArgForCreate,
-           help='Size of volume, in GBs. (Required unless '
+           help='Size of volume, in GiBs. (Required unless '
                 'snapshot-id/source-volid is specified).')
 @utils.arg('--consisgroup-id',
            metavar='<consistencygroup-id>',
@@ -619,6 +624,23 @@ def do_image_metadata(cs, args):
            help='Filters results by a volume ID. Default=None.')
 @utils.arg('--volume_id',
            help=argparse.SUPPRESS)
+@utils.arg('--marker',
+           metavar='<marker>',
+           default=None,
+           help='Begin returning snapshots that appear later in the snapshot '
+                'list than that represented by this id. '
+                'Default=None.')
+@utils.arg('--limit',
+           metavar='<limit>',
+           default=None,
+           help='Maximum number of snapshots to return. Default=None.')
+@utils.arg('--sort',
+           metavar='<key>[:<direction>]',
+           default=None,
+           help=(('Comma-separated list of sort keys and directions in the '
+                  'form of <key>[:<asc|desc>]. '
+                  'Valid keys: %s. '
+                  'Default=None.') % ', '.join(base.SORT_KEY_VALUES)))
 @utils.service_type('volumev2')
 def do_snapshot_list(cs, args):
     """Lists all snapshots."""
@@ -634,7 +656,10 @@ def do_snapshot_list(cs, args):
         'volume_id': args.volume_id,
     }
 
-    snapshots = cs.volume_snapshots.list(search_opts=search_opts)
+    snapshots = cs.volume_snapshots.list(search_opts=search_opts,
+                                         marker=args.marker,
+                                         limit=args.limit,
+                                         sort=args.sort)
     _translate_volume_snapshot_keys(snapshots)
     utils.print_list(snapshots,
                      ['ID', 'Volume ID', 'Status', 'Name', 'Size'])
@@ -808,6 +833,20 @@ def do_type_default(cs, args):
     _print_volume_type_list([vtype])
 
 
+@utils.arg('volume_type',
+           metavar='<volume_type>',
+           help='Name or ID of the volume type.')
+@utils.service_type('volumev2')
+def do_type_show(cs, args):
+    """Show volume type details."""
+    vtype = _find_vtype(cs, args.volume_type)
+    info = dict()
+    info.update(vtype._info)
+
+    info.pop('links', None)
+    utils.print_dict(info)
+
+
 @utils.arg('id',
            metavar='<id>',
            help='ID of the volume type.')
@@ -817,10 +856,15 @@ def do_type_default(cs, args):
 @utils.arg('--description',
            metavar='<description>',
            help='Description of the volume type.')
+@utils.arg('--is-public',
+           metavar='<is-public>',
+           help='Make type accessible to the public or not.')
 @utils.service_type('volumev2')
 def do_type_update(cs, args):
-    """Updates volume type name and/or description."""
-    vtype = cs.volume_types.update(args.id, args.name, args.description)
+    """Updates volume type name ,description and/or is_public."""
+    is_public = strutils.bool_from_string(args.is_public)
+    vtype = cs.volume_types.update(args.id, args.name, args.description,
+                                   is_public)
     _print_volume_type_list([vtype])
 
 
@@ -1164,7 +1208,8 @@ def do_upload_to_image(cs, args):
 
 
 @utils.arg('volume', metavar='<volume>', help='ID of volume to migrate.')
-@utils.arg('host', metavar='<host>', help='Destination host.')
+@utils.arg('host', metavar='<host>', help='Destination host. Takes the form: '
+                                          'host@backend-name#pool')
 @utils.arg('--force-host-copy', metavar='<True|False>',
            choices=['True', 'False'],
            required=False,
@@ -1199,6 +1244,60 @@ def do_migrate(cs, args):
     except Exception as e:
         print("Migration for volume %s failed: %s." % (volume,
                                                        six.text_type(e)))
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='ID of volume to enable replication.')
+@utils.service_type('volumev2')
+def do_replication_enable(cs, args):
+    """Enables volume replication on a given volume."""
+    volume = utils.find_volume(cs, args.volume)
+    volume.replication_enable(args.volume)
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='ID of volume to disable replication.')
+@utils.service_type('volumev2')
+def do_replication_disable(cs, args):
+    """Disables volume replication on a given volume."""
+    volume = utils.find_volume(cs, args.volume)
+    volume.replication_disable(args.volume)
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='ID of volume to list available replication targets.')
+@utils.service_type('volumev2')
+def do_replication_list_targets(cs, args):
+    """List replication targets available for a volume."""
+    volume = utils.find_volume(cs, args.volume)
+    resp, body = volume.replication_list_targets(args.volume)
+    if body:
+        targets = body['targets']
+        columns = ['target_device_id']
+        if targets:
+            utils.print_list(targets, columns)
+        else:
+            print("There are no replication targets found for volume %s." %
+                  args.volume)
+    else:
+        print("There is no replication information for volume %s." %
+              args.volume)
+
+
+@utils.arg('volume',
+           metavar='<volume>',
+           help='ID of volume to failover.')
+@utils.arg('secondary',
+           metavar='<secondary>',
+           help='A unqiue identifier that represents a failover target.')
+@utils.service_type('volumev2')
+def do_replication_failover(cs, args):
+    """Failover a volume to a secondary target"""
+    volume = utils.find_volume(cs, args.volume)
+    volume.replication_failover(args.volume, args.secondary)
 
 
 @utils.arg('volume', metavar='<volume>',
@@ -1307,6 +1406,23 @@ def do_backup_show(cs, args):
            help='Filters results by a volume ID. Default=None.')
 @utils.arg('--volume_id',
            help=argparse.SUPPRESS)
+@utils.arg('--marker',
+           metavar='<marker>',
+           default=None,
+           help='Begin returning backups that appear later in the backup '
+                'list than that represented by this id. '
+                'Default=None.')
+@utils.arg('--limit',
+           metavar='<limit>',
+           default=None,
+           help='Maximum number of backups to return. Default=None.')
+@utils.arg('--sort',
+           metavar='<key>[:<direction>]',
+           default=None,
+           help=(('Comma-separated list of sort keys and directions in the '
+                  'form of <key>[:<asc|desc>]. '
+                  'Valid keys: %s. '
+                  'Default=None.') % ', '.join(base.SORT_KEY_VALUES)))
 @utils.service_type('volumev2')
 def do_backup_list(cs, args):
     """Lists all backups."""
@@ -1318,7 +1434,10 @@ def do_backup_list(cs, args):
         'volume_id': args.volume_id,
     }
 
-    backups = cs.backups.list(search_opts=search_opts)
+    backups = cs.backups.list(search_opts=search_opts,
+                              marker=args.marker,
+                              limit=args.limit,
+                              sort=args.sort)
     _translate_volume_snapshot_keys(backups)
     columns = ['ID', 'Volume ID', 'Status', 'Name', 'Size', 'Object Count',
                'Container']
@@ -1382,6 +1501,36 @@ def do_backup_import(cs, args):
     info.pop('links', None)
 
     utils.print_dict(info)
+
+
+@utils.arg('backup', metavar='<backup>', nargs='+',
+           help='Name or ID of the backup to modify.')
+@utils.arg('--state', metavar='<state>',
+           default='available',
+           help='The state to assign to the backup. Valid values are '
+                '"available", "error", "creating", "deleting", and '
+                '"error_deleting". Default=available.')
+@utils.service_type('volumev2')
+def do_backup_reset_state(cs, args):
+    """Explicitly updates the backup state."""
+    failure_count = 0
+
+    single = (len(args.backup) == 1)
+
+    for backup in args.backup:
+        try:
+            _find_backup(cs, backup).reset_state(args.state)
+        except Exception as e:
+            failure_count += 1
+            msg = "Reset state for backup %s failed: %s" % (backup, e)
+            if not single:
+                print(msg)
+
+    if failure_count == len(args.backup):
+        if not single:
+            msg = ("Unable to reset the state for any of the specified "
+                   "backups.")
+        raise exceptions.CommandError(msg)
 
 
 @utils.arg('volume', metavar='<volume>',
@@ -1475,7 +1624,7 @@ def do_transfer_show(cs, args):
 @utils.arg('new_size',
            metavar='<new_size>',
            type=int,
-           help='New size of volume, in GBs.')
+           help='New size of volume, in GiBs.')
 @utils.service_type('volumev2')
 def do_extend(cs, args):
     """Attempts to extend size of an existing volume."""
@@ -1660,11 +1809,12 @@ def do_encryption_type_create(cs, args):
     """Creates encryption type for a volume type. Admin only."""
     volume_type = _find_volume_type(cs, args.volume_type)
 
-    body = {}
-    body['provider'] = args.provider
-    body['cipher'] = args.cipher
-    body['key_size'] = args.key_size
-    body['control_location'] = args.control_location
+    body = {
+        'provider': args.provider,
+        'cipher': args.cipher,
+        'key_size': args.key_size,
+        'control_location': args.control_location
+    }
 
     result = cs.volume_encryption_types.create(volume_type, body)
     _print_volume_encryption_type_list([result])
@@ -1846,6 +1996,7 @@ def do_qos_disassociate_all(cs, args):
            default=[],
            help='Metadata key and value pair to set or unset. '
                 'For unset, specify only the key.')
+@utils.service_type('volumev2')
 def do_qos_key(cs, args):
     """Sets or unsets specifications for a qos spec."""
     keypair = _extract_metadata(args)
@@ -1907,6 +2058,16 @@ def do_metadata_show(cs, args):
     """Shows volume metadata."""
     volume = utils.find_volume(cs, args.volume)
     utils.print_dict(volume._info['metadata'], 'Metadata-property')
+
+
+@utils.arg('volume', metavar='<volume>',
+           help='ID of volume.')
+@utils.service_type('volumev2')
+def do_image_metadata_show(cs, args):
+    """Shows volume image metadata."""
+    volume = utils.find_volume(cs, args.volume)
+    resp, body = volume.show_image_metadata(volume)
+    utils.print_dict(body['metadata'], 'Metadata-property')
 
 
 @utils.arg('volume',
@@ -2011,8 +2172,7 @@ def do_manage(cs, args):
         volume_metadata = _extract_metadata(args)
 
     # Build a dictionary of key/value pairs to pass to the API.
-    ref_dict = {}
-    ref_dict[args.id_type] = args.identifier
+    ref_dict = {args.id_type: args.identifier}
 
     # The recommended way to specify an existing volume is by ID or name, and
     # have the Cinder driver look for 'source-name' or 'source-id' elements in

@@ -15,21 +15,7 @@
 
 """Volume interface (v2 extension)."""
 
-import six
-try:
-    from urllib import urlencode
-except ImportError:
-    from urllib.parse import urlencode
-
 from cinderclient import base
-
-
-# Valid sort directions and client sort keys
-SORT_DIR_VALUES = ('asc', 'desc')
-SORT_KEY_VALUES = ('id', 'status', 'size', 'availability_zone', 'name',
-                   'bootable', 'created_at')
-# Mapping of client keys to actual sort keys
-SORT_KEY_MAPPINGS = {'name': 'display_name'}
 
 
 class Volume(base.Resource):
@@ -114,6 +100,14 @@ class Volume(base.Resource):
         """
         return self.manager.delete_image_metadata(self, volume, keys)
 
+    def show_image_metadata(self, volume):
+        """Show a volume's image metadata.
+
+        :param volume : The :class: `Volume` where the image metadata
+            associated.
+        """
+        return self.manager.show_image_metadata(self)
+
     def upload_to_image(self, force, image_name, container_format,
                         disk_format):
         """Upload a volume to image service as an image."""
@@ -149,6 +143,22 @@ class Volume(base.Resource):
     def migrate_volume(self, host, force_host_copy, lock_volume):
         """Migrate the volume to a new host."""
         self.manager.migrate_volume(self, host, force_host_copy, lock_volume)
+
+    def replication_enable(self, volume):
+        """Enables volume replication on a given volume."""
+        return self.manager.replication_enable(volume)
+
+    def replication_disable(self, volume):
+        """Disables volume replication on a given volume."""
+        return self.manager.replication_disable(volume)
+
+    def replication_list_targets(self, volume):
+        """List replication targets available for a volume."""
+        return self.manager.replication_list_targets(volume)
+
+    def replication_failover(self, volume, secondary):
+        """Failover a volume to a secondary target."""
+        return self.manager.replication_failover(volume, secondary)
 
     def retype(self, volume_type, policy):
         """Change a volume's type."""
@@ -260,55 +270,6 @@ class VolumeManager(base.ManagerWithFind):
         """
         return self._get("/volumes/%s" % volume_id, "volume")
 
-    def _format_sort_param(self, sort):
-        '''Formats the sort information into the sort query string parameter.
-
-        The input sort information can be any of the following:
-        - Comma-separated string in the form of <key[:dir]>
-        - List of strings in the form of <key[:dir]>
-        - List of either string keys, or tuples of (key, dir)
-
-        For example, the following import sort values are valid:
-        - 'key1:dir1,key2,key3:dir3'
-        - ['key1:dir1', 'key2', 'key3:dir3']
-        - [('key1', 'dir1'), 'key2', ('key3', dir3')]
-
-        :param sort: Input sort information
-        :returns: Formatted query string parameter or None
-        :raise ValueError: If an invalid sort direction or invalid sort key is
-                           given
-        '''
-        if not sort:
-            return None
-
-        if isinstance(sort, six.string_types):
-            # Convert the string into a list for consistent validation
-            sort = [s for s in sort.split(',') if s]
-
-        sort_array = []
-        for sort_item in sort:
-            if isinstance(sort_item, tuple):
-                sort_key = sort_item[0]
-                sort_dir = sort_item[1]
-            else:
-                sort_key, _sep, sort_dir = sort_item.partition(':')
-            sort_key = sort_key.strip()
-            if sort_key in SORT_KEY_VALUES:
-                sort_key = SORT_KEY_MAPPINGS.get(sort_key, sort_key)
-            else:
-                raise ValueError('sort_key must be one of the following: %s.'
-                                 % ', '.join(SORT_KEY_VALUES))
-            if sort_dir:
-                sort_dir = sort_dir.strip()
-                if sort_dir not in SORT_DIR_VALUES:
-                    msg = ('sort_dir must be one of the following: %s.'
-                           % ', '.join(SORT_DIR_VALUES))
-                    raise ValueError(msg)
-                sort_array.append('%s:%s' % (sort_key, sort_dir))
-            else:
-                sort_array.append(sort_key)
-        return ','.join(sort_array)
-
     def list(self, detailed=True, search_opts=None, marker=None, limit=None,
              sort_key=None, sort_dir=None, sort=None):
         """Lists all volumes.
@@ -324,55 +285,13 @@ class VolumeManager(base.ManagerWithFind):
         :param sort: Sort information
         :rtype: list of :class:`Volume`
         """
-        if search_opts is None:
-            search_opts = {}
 
-        qparams = {}
-
-        for opt, val in six.iteritems(search_opts):
-            if val:
-                qparams[opt] = val
-
-        if marker:
-            qparams['marker'] = marker
-
-        if limit:
-            qparams['limit'] = limit
-
-        # sort_key and sort_dir deprecated in kilo, prefer sort
-        if sort:
-            qparams['sort'] = self._format_sort_param(sort)
-        else:
-            if sort_key is not None:
-                if sort_key in SORT_KEY_VALUES:
-                    qparams['sort_key'] = SORT_KEY_MAPPINGS.get(sort_key,
-                                                                sort_key)
-                else:
-                    msg = ('sort_key must be one of the following: %s.'
-                           % ', '.join(SORT_KEY_VALUES))
-                    raise ValueError(msg)
-            if sort_dir is not None:
-                if sort_dir in SORT_DIR_VALUES:
-                    qparams['sort_dir'] = sort_dir
-                else:
-                    msg = ('sort_dir must be one of the following: %s.'
-                           % ', '.join(SORT_DIR_VALUES))
-                    raise ValueError(msg)
-
-        # Transform the dict to a sequence of two-element tuples in fixed
-        # order, then the encoded string will be consistent in Python 2&3.
-        if qparams:
-            new_qparams = sorted(qparams.items(), key=lambda x: x[0])
-            query_string = "?%s" % urlencode(new_qparams)
-        else:
-            query_string = ""
-
-        detail = ""
-        if detailed:
-            detail = "/detail"
-
-        return self._list("/volumes%s%s" % (detail, query_string),
-                          "volumes", limit=limit)
+        resource_type = "volumes"
+        url = self._build_list_url(resource_type, detailed=detailed,
+                                   search_opts=search_opts, marker=marker,
+                                   limit=limit, sort_key=sort_key,
+                                   sort_dir=sort_dir, sort=sort)
+        return self._list(url, resource_type, limit=limit)
 
     def delete(self, volume):
         """Delete a volume.
@@ -518,6 +437,14 @@ class VolumeManager(base.ManagerWithFind):
             self._action("os-unset_image_metadata", volume,
                          {'key': key})
 
+    def show_image_metadata(self, volume):
+        """Show a volume's image metadata.
+
+        :param volume : The :class: `Volume` where the image metadata
+            associated.
+        """
+        return self._action("os-show_image_metadata", volume)
+
     def upload_to_image(self, volume, force, image_name, container_format,
                         disk_format):
         """Upload volume to image service as image.
@@ -600,6 +527,46 @@ class VolumeManager(base.ManagerWithFind):
         return self._action('os-migrate_volume_completion',
                             old_volume,
                             {'new_volume': new_volume_id, 'error': error})[1]
+
+    def replication_enable(self, volume_id):
+        """
+        Enables volume replication on a given volume.
+
+        :param volume_id: The id of the volume to query
+        """
+        return self._action('os-enable_replication',
+                            volume_id)
+
+    def replication_disable(self, volume_id):
+        """
+        Disables volume replication on a given volume.
+
+        :param volume_id: The id of the volume to query
+        """
+        return self._action('os-disable_replication',
+                            volume_id)
+
+    def replication_list_targets(self, volume_id):
+        """
+        List replication targets available for a volume.
+
+        :param volume_id: The id of the volume to query
+        :return: a list of available replication targets
+        """
+        return self._action('os-list_replication_targets',
+                            volume_id)
+
+    def replication_failover(self, volume_id, secondary):
+        """
+        Failover a volume to a secondary target.
+
+        :param volume_id: The id of the volume to query
+        :param secondary: A unqiue identifier that represents a failover
+                          target
+        """
+        return self._action('os-failover_replication',
+                            volume_id,
+                            {"secondary": secondary})
 
     def update_all_metadata(self, volume, metadata):
         """Update all metadata of a volume.

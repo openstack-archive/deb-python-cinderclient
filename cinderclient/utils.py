@@ -24,7 +24,7 @@ import six
 import prettytable
 
 from cinderclient import exceptions
-from cinderclient.openstack.common import strutils
+from oslo_utils import encodeutils
 
 
 def arg(*args, **kwargs):
@@ -107,7 +107,7 @@ def _print(pt, order):
     if sys.version_info >= (3, 0):
         print(pt.get_string(sortby=order))
     else:
-        print(strutils.safe_encode(pt.get_string(sortby=order)))
+        print(encodeutils.safe_encode(pt.get_string(sortby=order)))
 
 
 def print_list(objs, fields, exclude_unavailable=False, formatters=None,
@@ -198,7 +198,7 @@ def find_resource(manager, name_or_id):
             pass
 
     if sys.version_info <= (3, 0):
-        name_or_id = strutils.safe_decode(name_or_id)
+        name_or_id = encodeutils.safe_decode(name_or_id)
 
     try:
         try:
@@ -226,36 +226,6 @@ def find_resource(manager, name_or_id):
 def find_volume(cs, volume):
     """Get a volume by name or ID."""
     return find_resource(cs.volumes, volume)
-
-
-def _format_servers_list_networks(server):
-    output = []
-    for (network, addresses) in list(server.networks.items()):
-        if len(addresses) == 0:
-            continue
-        addresses_csv = ', '.join(addresses)
-        group = "%s=%s" % (network, addresses_csv)
-        output.append(group)
-
-    return '; '.join(output)
-
-
-class HookableMixin(object):
-    """Mixin so classes can register and run hooks."""
-    _hooks_map = {}
-
-    @classmethod
-    def add_hook(cls, hook_type, hook_func):
-        if hook_type not in cls._hooks_map:
-            cls._hooks_map[hook_type] = []
-
-        cls._hooks_map[hook_type].append(hook_func)
-
-    @classmethod
-    def run_hooks(cls, hook_type, *args, **kwargs):
-        hook_funcs = cls._hooks_map.get(hook_type) or []
-        for hook_func in hook_funcs:
-            hook_func(*args, **kwargs)
 
 
 def safe_issubclass(*args):

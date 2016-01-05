@@ -552,9 +552,31 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('POST', '/snapshots/5678/action',
                                    body=expected)
 
+    def test_backup_reset_state(self):
+        self.run_command('backup-reset-state 1234')
+        expected = {'os-reset_status': {'status': 'available'}}
+        self.assert_called('POST', '/backups/1234/action', body=expected)
+
+    def test_backup_reset_state_with_flag(self):
+        self.run_command('backup-reset-state --state error 1234')
+        expected = {'os-reset_status': {'status': 'error'}}
+        self.assert_called('POST', '/backups/1234/action', body=expected)
+
+    def test_backup_reset_state_multiple(self):
+        self.run_command('backup-reset-state 1234 5678')
+        expected = {'os-reset_status': {'status': 'available'}}
+        self.assert_called_anytime('POST', '/backups/1234/action',
+                                   body=expected)
+        self.assert_called_anytime('POST', '/backups/5678/action',
+                                   body=expected)
+
     def test_type_list(self):
         self.run_command('type-list')
         self.assert_called_anytime('GET', '/types?is_public=None')
+
+    def test_type_show(self):
+        self.run_command('type-show 1')
+        self.assert_called('GET', '/types/1')
 
     def test_type_create(self):
         self.run_command('type-create test-type-1')
@@ -577,6 +599,15 @@ class ShellTest(utils.TestCase):
                          '--description=test_type-3-desc '
                          '--is-public=False')
         self.assert_called('POST', '/types', body=expected)
+
+    def test_type_update(self):
+        expected = {'volume_type': {'name': 'test-type-1',
+                                    'description': 'test_type-1-desc',
+                                    'is_public': False}}
+        self.run_command('type-update --name test-type-1 '
+                         '--description=test_type-1-desc '
+                         '--is-public=False 1')
+        self.assert_called('PUT', '/types/1', body=expected)
 
     def test_type_access_list(self):
         self.run_command('type-access-list --volume-type 3')
@@ -762,6 +793,23 @@ class ShellTest(utils.TestCase):
                                           'host': 'fakehost'}}
         self.assert_called('POST', '/volumes/1234/action',
                            body=expected)
+
+    def test_replication_enable(self):
+        self.run_command('replication-enable 1234')
+        self.assert_called('POST', '/volumes/1234/action')
+
+    def test_replication_disable(self):
+        self.run_command('replication-disable 1234')
+        self.assert_called('POST', '/volumes/1234/action')
+
+    def test_replication_list_targets(self):
+        self.run_command('replication-list-targets 1234')
+        self.assert_called('POST', '/volumes/1234/action')
+
+    def test_replication_failover(self):
+        self.run_command('replication-failover 1234 target')
+        expected = {'os-failover_replication': {'secondary': 'target'}}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_snapshot_metadata_set(self):
         self.run_command('snapshot-metadata 1234 set key1=val1 key2=val2')
@@ -1091,3 +1139,15 @@ class ShellTest(utils.TestCase):
     def test_get_capabilities(self):
         self.run_command('get-capabilities host')
         self.assert_called('GET', '/capabilities/host')
+
+    def test_image_metadata_show(self):
+        # since the request is not actually sent to cinder API but is
+        # calling the method in :class:`v2.fakes.FakeHTTPClient` instead.
+        # Thus, ignore any exception which is false negative compare
+        # with real API call.
+        try:
+            self.run_command('image-metadata-show 1234')
+        except Exception:
+            pass
+        expected = {"os-show_image_metadata": None}
+        self.assert_called('POST', '/volumes/1234/action', body=expected)

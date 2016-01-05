@@ -51,6 +51,14 @@ class VolumeBackupsTest(utils.TestCase):
         cs.backups.list()
         cs.assert_called('GET', '/backups/detail')
 
+    def test_list_with_pagination(self):
+        cs.backups.list(limit=2, marker=100)
+        cs.assert_called('GET', '/backups/detail?limit=2&marker=100')
+
+    def test_sorted_list(self):
+        cs.backups.list(sort="id")
+        cs.assert_called('GET', '/backups/detail?sort=id')
+
     def test_delete(self):
         b = cs.backups.list()[0]
         b.delete()
@@ -69,6 +77,17 @@ class VolumeBackupsTest(utils.TestCase):
         cs.assert_called('POST', '/backups/%s/restore' % backup_id)
         self.assertIsInstance(info,
                               volume_backups_restore.VolumeBackupsRestore)
+
+    def test_reset_state(self):
+        b = cs.backups.list()[0]
+        api = '/backups/76a17945-3c6f-435c-975b-b5685db10b62/action'
+        b.reset_state(state='error')
+        cs.assert_called('POST', api)
+        cs.backups.reset_state('76a17945-3c6f-435c-975b-b5685db10b62',
+                               state='error')
+        cs.assert_called('POST', api)
+        cs.backups.reset_state(b, state='error')
+        cs.assert_called('POST', api)
 
     def test_record_export(self):
         backup_id = '76a17945-3c6f-435c-975b-b5685db10b62'
