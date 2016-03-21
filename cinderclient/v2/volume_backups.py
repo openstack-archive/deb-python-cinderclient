@@ -17,6 +17,7 @@
 Volume Backups interface (1.1 extension).
 """
 from cinderclient import base
+from cinderclient.openstack.common.apiclient import base as common_base
 
 
 class VolumeBackup(base.Resource):
@@ -30,7 +31,7 @@ class VolumeBackup(base.Resource):
         return self.manager.delete(self)
 
     def reset_state(self, state):
-        self.manager.reset_state(self, state)
+        return self.manager.reset_state(self, state)
 
 
 class VolumeBackupManager(base.ManagerWithFind):
@@ -39,7 +40,8 @@ class VolumeBackupManager(base.ManagerWithFind):
 
     def create(self, volume_id, container=None,
                name=None, description=None,
-               incremental=False, force=False):
+               incremental=False, force=False,
+               snapshot_id=None):
         """Creates a volume backup.
 
         :param volume_id: The ID of the volume to backup.
@@ -55,7 +57,8 @@ class VolumeBackupManager(base.ManagerWithFind):
                            'name': name,
                            'description': description,
                            'incremental': incremental,
-                           'force': force, }}
+                           'force': force,
+                           'snapshot_id': snapshot_id, }}
         return self._create('/backups', body, 'backup')
 
     def get(self, backup_id):
@@ -83,7 +86,7 @@ class VolumeBackupManager(base.ManagerWithFind):
 
         :param backup: The :class:`VolumeBackup` to delete.
         """
-        self._delete("/backups/%s" % base.getid(backup))
+        return self._delete("/backups/%s" % base.getid(backup))
 
     def reset_state(self, backup, state):
         """Update the specified volume backup with the provided state."""
@@ -94,27 +97,28 @@ class VolumeBackupManager(base.ManagerWithFind):
         body = {action: info}
         self.run_hooks('modify_body_for_action', body, **kwargs)
         url = '/backups/%s/action' % base.getid(backup)
-        return self.api.client.post(url, body=body)
+        resp, body = self.api.client.post(url, body=body)
+        return common_base.TupleWithMeta((resp, body), resp)
 
     def export_record(self, backup_id):
         """Export volume backup metadata record.
 
         :param backup_id: The ID of the backup to export.
-        :rtype: :class:`VolumeBackup`
+        :rtype: A dictionary containing 'backup_url' and 'backup_service'.
         """
         resp, body = \
             self.api.client.get("/backups/%s/export_record" % backup_id)
-        return body['backup-record']
+        return common_base.DictWithMeta(body['backup-record'], resp)
 
     def import_record(self, backup_service, backup_url):
-        """Export volume backup metadata record.
+        """Import volume backup metadata record.
 
         :param backup_service: Backup service to use for importing the backup
         :param backup_url: Backup URL for importing the backup metadata
-        :rtype: :class:`VolumeBackup`
+        :rtype: A dictionary containing volume backup metadata.
         """
         body = {'backup-record': {'backup_service': backup_service,
                                   'backup_url': backup_url}}
         self.run_hooks('modify_body_for_update', body, 'backup-record')
         resp, body = self.api.client.post("/backups/import_record", body=body)
-        return body['backup']
+        return common_base.DictWithMeta(body['backup'], resp)

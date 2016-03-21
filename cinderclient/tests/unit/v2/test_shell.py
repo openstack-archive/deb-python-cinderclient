@@ -194,6 +194,14 @@ class ShellTest(utils.TestCase):
         self.run_command('list --status=available')
         self.assert_called('GET', '/volumes/detail?status=available')
 
+    def test_list_filter_bootable_true(self):
+        self.run_command('list --bootable=true')
+        self.assert_called('GET', '/volumes/detail?bootable=true')
+
+    def test_list_filter_bootable_false(self):
+        self.run_command('list --bootable=false')
+        self.assert_called('GET', '/volumes/detail?bootable=false')
+
     def test_list_filter_name(self):
         self.run_command('list --name=1234')
         self.assert_called('GET', '/volumes/detail?name=1234')
@@ -209,6 +217,33 @@ class ShellTest(utils.TestCase):
     def test_list_limit(self):
         self.run_command('list --limit=10')
         self.assert_called('GET', '/volumes/detail?limit=10')
+
+    @mock.patch("cinderclient.utils.print_list")
+    def test_list_field(self, mock_print):
+        self.run_command('list --field Status,Name,Size,Bootable')
+        self.assert_called('GET', '/volumes/detail')
+        key_list = ['ID', 'Status', 'Name', 'Size', 'Bootable']
+        mock_print.assert_called_once_with(mock.ANY, key_list,
+            exclude_unavailable=True, sortby_index=0)
+
+    @mock.patch("cinderclient.utils.print_list")
+    def test_list_field_with_all_tenants(self, mock_print):
+        self.run_command('list --field Status,Name,Size,Bootable '
+                         '--all-tenants 1')
+        self.assert_called('GET', '/volumes/detail?all_tenants=1')
+        key_list = ['ID', 'Status', 'Name', 'Size', 'Bootable']
+        mock_print.assert_called_once_with(mock.ANY, key_list,
+            exclude_unavailable=True, sortby_index=0)
+
+    @mock.patch("cinderclient.utils.print_list")
+    def test_list_field_with_tenant(self, mock_print):
+        self.run_command('list --field Status,Name,Size,Bootable '
+                         '--tenant 123')
+        self.assert_called('GET',
+            '/volumes/detail?all_tenants=1&project_id=123')
+        key_list = ['ID', 'Status', 'Name', 'Size', 'Bootable']
+        mock_print.assert_called_once_with(mock.ANY, key_list,
+            exclude_unavailable=True, sortby_index=0)
 
     def test_list_sort_valid(self):
         self.run_command('list --sort_key=id --sort_dir=asc')
@@ -376,6 +411,15 @@ class ShellTest(utils.TestCase):
         self.run_command('backup-create 1234 --force')
         self.assert_called('POST', '/backups')
 
+    def test_backup_snapshot(self):
+        self.run_command('backup-create 1234 --snapshot-id 4321')
+        self.assert_called('POST', '/backups')
+
+    def test_multiple_backup_delete(self):
+        self.run_command('backup-delete 1234 5678')
+        self.assert_called_anytime('DELETE', '/backups/1234')
+        self.assert_called('DELETE', '/backups/5678')
+
     def test_restore(self):
         self.run_command('backup-restore 1234')
         self.assert_called('POST', '/backups/1234/restore')
@@ -423,6 +467,24 @@ class ShellTest(utils.TestCase):
         self.assert_called('GET', '/snapshots/detail?'
                            'status=available&volume_id=1234')
 
+    @mock.patch("cinderclient.utils.print_list")
+    def test_snapshot_list_sort(self, mock_print_list):
+        self.run_command('snapshot-list --sort id')
+        self.assert_called('GET', '/snapshots/detail?sort=id')
+        columns = ['ID', 'Volume ID', 'Status', 'Name', 'Size']
+        mock_print_list.assert_called_once_with(mock.ANY, columns,
+            sortby_index=None)
+
+    def test_snapshot_list_filter_tenant_with_all_tenants(self):
+        self.run_command('snapshot-list --all-tenants=1 --tenant 123')
+        self.assert_called('GET',
+                           '/snapshots/detail?all_tenants=1&project_id=123')
+
+    def test_snapshot_list_filter_tenant_without_all_tenants(self):
+        self.run_command('snapshot-list --tenant 123')
+        self.assert_called('GET',
+                           '/snapshots/detail?all_tenants=1&project_id=123')
+
     def test_rename(self):
         # basic rename with positional arguments
         self.run_command('rename 1234 new-name')
@@ -443,6 +505,14 @@ class ShellTest(utils.TestCase):
 
         # Call rename with no arguments
         self.assertRaises(SystemExit, self.run_command, 'rename')
+
+    def test_rename_invalid_args(self):
+        """Ensure that error generated does not reference an HTTP code."""
+
+        self.assertRaisesRegexp(exceptions.ClientException,
+                                '(?!HTTP)',
+                                self.run_command,
+                                'rename volume-1234-abcd')
 
     def test_rename_snapshot(self):
         # basic rename with positional arguments
@@ -465,6 +535,11 @@ class ShellTest(utils.TestCase):
 
         # Call snapshot-rename with no arguments
         self.assertRaises(SystemExit, self.run_command, 'snapshot-rename')
+
+    def test_rename_snapshot_invalid_args(self):
+        self.assertRaises(exceptions.ClientException,
+                          self.run_command,
+                          'snapshot-rename snapshot-1234')
 
     def test_set_metadata_set(self):
         self.run_command('metadata 1234 set key1=val1 key2=val2')
@@ -794,23 +869,6 @@ class ShellTest(utils.TestCase):
         self.assert_called('POST', '/volumes/1234/action',
                            body=expected)
 
-    def test_replication_enable(self):
-        self.run_command('replication-enable 1234')
-        self.assert_called('POST', '/volumes/1234/action')
-
-    def test_replication_disable(self):
-        self.run_command('replication-disable 1234')
-        self.assert_called('POST', '/volumes/1234/action')
-
-    def test_replication_list_targets(self):
-        self.run_command('replication-list-targets 1234')
-        self.assert_called('POST', '/volumes/1234/action')
-
-    def test_replication_failover(self):
-        self.run_command('replication-failover 1234 target')
-        expected = {'os-failover_replication': {'secondary': 'target'}}
-        self.assert_called('POST', '/volumes/1234/action', body=expected)
-
     def test_snapshot_metadata_set(self):
         self.run_command('snapshot-metadata 1234 set key1=val1 key2=val2')
         self.assert_called('POST', '/snapshots/1234/metadata',
@@ -1037,8 +1095,8 @@ class ShellTest(utils.TestCase):
         self.assert_called('PUT', '/consistencygroups/1234',
                            body=expected)
 
-    def test_consistencygroup_update_bad_request(self):
-        self.assertRaises(exceptions.BadRequest,
+    def test_consistencygroup_update_invalid_args(self):
+        self.assertRaises(exceptions.ClientException,
                           self.run_command,
                           'consisgroup-update 1234')
 
@@ -1079,13 +1137,13 @@ class ShellTest(utils.TestCase):
                            expected)
 
     def test_consistencygroup_create_from_src_fail_no_snap_cg(self):
-        self.assertRaises(exceptions.BadRequest,
+        self.assertRaises(exceptions.ClientException,
                           self.run_command,
                           'consisgroup-create-from-src '
                           '--name cg')
 
     def test_consistencygroup_create_from_src_fail_both_snap_cg(self):
-        self.assertRaises(exceptions.BadRequest,
+        self.assertRaises(exceptions.ClientException,
                           self.run_command,
                           'consisgroup-create-from-src '
                           '--name cg '
@@ -1136,6 +1194,15 @@ class ShellTest(utils.TestCase):
         self.run_command('backup-list')
         self.assert_called('GET', '/backups/detail')
 
+    @mock.patch("cinderclient.utils.print_list")
+    def test_backup_list_sort(self, mock_print_list):
+        self.run_command('backup-list --sort id')
+        self.assert_called('GET', '/backups/detail?sort=id')
+        columns = ['ID', 'Volume ID', 'Status', 'Name', 'Size', 'Object Count',
+               'Container']
+        mock_print_list.assert_called_once_with(mock.ANY, columns,
+            sortby_index=None)
+
     def test_get_capabilities(self):
         self.run_command('get-capabilities host')
         self.assert_called('GET', '/capabilities/host')
@@ -1151,3 +1218,25 @@ class ShellTest(utils.TestCase):
             pass
         expected = {"os-show_image_metadata": None}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
+
+    def test_snapshot_manage(self):
+        self.run_command('snapshot-manage 1234 some_fake_name '
+                         '--name foo --description bar '
+                         '--metadata k1=v1 k2=v2')
+        expected = {'snapshot': {'volume_id': 1234,
+                                 'ref': {'source-name': 'some_fake_name'},
+                                 'name': 'foo',
+                                 'description': 'bar',
+                                 'metadata': {'k1': 'v1', 'k2': 'v2'}
+                                 }}
+        self.assert_called_anytime('POST', '/os-snapshot-manage',
+                                   body=expected)
+
+    def test_snapshot_unmanage(self):
+        self.run_command('snapshot-unmanage 1234')
+        self.assert_called('POST', '/snapshots/1234/action',
+                           body={'os-unmanage': None})
+
+    def test_extra_specs_list(self):
+        self.run_command('extra-specs-list')
+        self.assert_called('GET', '/types?is_public=None')

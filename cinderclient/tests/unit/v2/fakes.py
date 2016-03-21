@@ -25,22 +25,13 @@ import cinderclient.tests.unit.utils as utils
 from cinderclient.v2 import client
 
 
-def _stub_volume(**kwargs):
+REQUEST_ID = 'req-test-request-id'
+
+
+def _stub_volume(*args, **kwargs):
     volume = {
-        'id': '1234',
-        'name': None,
-        'description': None,
-        "attachments": [],
-        "bootable": "false",
-        "availability_zone": "cinder",
-        "created_at": "2012-08-27T00:00:00.000000",
-        "id": '00000000-0000-0000-0000-000000000000',
-        "metadata": {},
-        "size": 1,
-        "snapshot_id": None,
-        "status": "available",
-        "volume_type": "None",
-        "multiattach": "false",
+        "migration_status": None,
+        "attachments": [{'server_id': 1234}],
         "links": [
             {
                 "href": "http://localhost/v2/fake/volumes/1234",
@@ -51,7 +42,31 @@ def _stub_volume(**kwargs):
                 "rel": "bookmark"
             }
         ],
-    }
+        "availability_zone": "cinder",
+        "os-vol-host-attr:host": "ip-192-168-0-2",
+        "encrypted": "false",
+        "updated_at": "2013-11-12T21:00:00.000000",
+        "os-volume-replication:extended_status": "None",
+        "replication_status": "disabled",
+        "snapshot_id": None,
+        'id': 1234,
+        "size": 1,
+        "user_id": "1b2d6e8928954ca4ae7c243863404bdc",
+        "os-vol-tenant-attr:tenant_id": "eb72eb33a0084acf8eb21356c2b021a7",
+        "os-vol-mig-status-attr:migstat": None,
+        "metadata": {},
+        "status": "available",
+        'description': None,
+        "multiattach": "false",
+        "os-volume-replication:driver_data": None,
+        "source_volid": None,
+        "consistencygroup_id": None,
+        "os-vol-mig-status-attr:name_id": None,
+        "name": "sample-volume",
+        "bootable": "false",
+        "created_at": "2012-08-27T00:00:00.000000",
+        "volume_type": "None",
+   }
     volume.update(kwargs)
     return volume
 
@@ -293,17 +308,14 @@ class FakeHTTPClient(base_client.HTTPClient):
         # Note the call
         self.callstack.append((method, url, kwargs.get('body', None)))
         status, headers, body = getattr(self, callback)(**kwargs)
+        # add fake request-id header
+        headers['x-openstack-request-id'] = REQUEST_ID
         r = utils.TestResponse({
             "status_code": status,
             "text": body,
             "headers": headers,
         })
         return r, body
-
-        if hasattr(status, 'items'):
-            return utils.TestResponse(status), body
-        else:
-            return utils.TestResponse({"status": status}), body
 
     def get_volume_api_version_from_endpoint(self):
         magic_tuple = urlparse.urlsplit(self.management_url)
@@ -346,6 +358,8 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert 'status' in body['os-reset_status']
         elif action == 'os-update_snapshot_status':
             assert 'status' in body['os-update_snapshot_status']
+        elif action == 'os-unmanage':
+            assert body[action] is None
         else:
             raise AssertionError('Unexpected action: %s' % action)
         return (resp, {}, _body)
@@ -385,13 +399,9 @@ class FakeHTTPClient(base_client.HTTPClient):
                 {'id': 5678, 'name': 'sample-volume2'}
             ]})
 
-    # TODO(jdg): This will need to change
-    # at the very least it's not complete
     def get_volumes_detail(self, **kw):
         return (200, {}, {"volumes": [
-            {'id': kw.get('id', 1234),
-             'name': 'sample-volume',
-             'attachments': [{'server_id': 1234}]},
+            _stub_volume(id=kw.get('id', 1234))
         ]})
 
     def get_volumes_1234(self, **kw):
@@ -423,7 +433,7 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert body[action] is None
         elif action == 'os-initialize_connection':
             assert list(body[action]) == ['connector']
-            return (202, {}, {'connection_info': 'foos'})
+            return (202, {}, {'connection_info': {'foos': 'bars'}})
         elif action == 'os-terminate_connection':
             assert list(body[action]) == ['connector']
         elif action == 'os-begin_detaching':
@@ -437,14 +447,6 @@ class FakeHTTPClient(base_client.HTTPClient):
         elif action == 'os-migrate_volume':
             assert 'host' in body[action]
             assert 'force_host_copy' in body[action]
-        elif action == 'os-enable_replication':
-            assert body[action] is None
-        elif action == 'os-disable_replication':
-            assert body[action] is None
-        elif action == 'os-list_replication_targets':
-            assert body[action] is None
-        elif action == 'os-failover_replication':
-            assert 'secondary' in body[action]
         elif action == 'os-update_readonly_flag':
             assert list(body[action]) == ['readonly']
         elif action == 'os-retype':
@@ -801,6 +803,12 @@ class FakeHTTPClient(base_client.HTTPClient):
     def delete_backups_76a17945_3c6f_435c_975b_b5685db10b62(self, **kw):
         return (202, {}, None)
 
+    def delete_backups_1234(self, **kw):
+        return (202, {}, None)
+
+    def delete_backups_5678(self, **kw):
+        return (202, {}, None)
+
     def post_backups(self, **kw):
         base_uri = 'http://localhost:8776'
         tenant_id = '0fa851f6668144cf9cd8c8419c1646c1'
@@ -1073,6 +1081,11 @@ class FakeHTTPClient(base_client.HTTPClient):
         volume = _stub_volume(id='1234')
         volume.update(kw['body']['volume'])
         return (202, {}, {'volume': volume})
+
+    def post_os_snapshot_manage(self, **kw):
+        snapshot = _stub_snapshot(id='1234', volume_id='volume_id1')
+        snapshot.update(kw['body']['snapshot'])
+        return (202, {}, {'snapshot': snapshot})
 
     def post_os_promote_replica_1234(self, **kw):
         return (202, {}, {})

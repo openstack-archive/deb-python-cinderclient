@@ -16,6 +16,7 @@
 """Volume snapshot interface (1.1 extension)."""
 
 from cinderclient import base
+from cinderclient.openstack.common.apiclient import base as common_base
 
 
 class Snapshot(base.Resource):
@@ -26,11 +27,11 @@ class Snapshot(base.Resource):
 
     def delete(self):
         """Delete this snapshot."""
-        self.manager.delete(self)
+        return self.manager.delete(self)
 
     def update(self, **kwargs):
         """Update the name or description for this snapshot."""
-        self.manager.update(self, **kwargs)
+        return self.manager.update(self, **kwargs)
 
     @property
     def progress(self):
@@ -42,7 +43,7 @@ class Snapshot(base.Resource):
 
     def reset_state(self, state):
         """Update the snapshot with the provided state."""
-        self.manager.reset_state(self, state)
+        return self.manager.reset_state(self, state)
 
     def set_metadata(self, metadata):
         """Set metadata of this snapshot."""
@@ -55,6 +56,16 @@ class Snapshot(base.Resource):
     def update_all_metadata(self, metadata):
         """Update_all metadata of this snapshot."""
         return self.manager.update_all_metadata(self, metadata)
+
+    def manage(self, volume_id, ref, name=None, description=None,
+               metadata=None):
+        """Manage an existing snapshot."""
+        self.manager.manage(volume_id=volume_id, ref=ref, name=name,
+                            description=description, metadata=metadata)
+
+    def unmanage(self, snapshot):
+        """Unmanage a snapshot."""
+        self.manager.unmanage(snapshot)
 
 
 class SnapshotManager(base.ManagerWithFind):
@@ -112,7 +123,7 @@ class SnapshotManager(base.ManagerWithFind):
 
         :param snapshot: The :class:`Snapshot` to delete.
         """
-        self._delete("/snapshots/%s" % base.getid(snapshot))
+        return self._delete("/snapshots/%s" % base.getid(snapshot))
 
     def update(self, snapshot, **kwargs):
         """Update the name or description for a snapshot.
@@ -124,7 +135,7 @@ class SnapshotManager(base.ManagerWithFind):
 
         body = {"snapshot": kwargs}
 
-        self._update("/snapshots/%s" % base.getid(snapshot), body)
+        return self._update("/snapshots/%s" % base.getid(snapshot), body)
 
     def reset_state(self, snapshot, state):
         """Update the specified snapshot with the provided state."""
@@ -135,7 +146,8 @@ class SnapshotManager(base.ManagerWithFind):
         body = {action: info}
         self.run_hooks('modify_body_for_action', body, **kwargs)
         url = '/snapshots/%s/action' % base.getid(snapshot)
-        return self.api.client.post(url, body=body)
+        resp, body = self.api.client.post(url, body=body)
+        return common_base.TupleWithMeta((resp, body), resp)
 
     def update_snapshot_status(self, snapshot, update_dict):
         return self._action('os-update_snapshot_status',
@@ -157,9 +169,14 @@ class SnapshotManager(base.ManagerWithFind):
         :param snapshot: The :class:`Snapshot`.
         :param keys: A list of keys to be removed.
         """
+        response_list = []
         snapshot_id = base.getid(snapshot)
         for k in keys:
-            self._delete("/snapshots/%s/metadata/%s" % (snapshot_id, k))
+            resp, body = self._delete("/snapshots/%s/metadata/%s" %
+                                      (snapshot_id, k))
+            response_list.append(resp)
+
+        return common_base.ListWithMeta([], response_list)
 
     def update_all_metadata(self, snapshot, metadata):
         """Update_all snapshot metadata.
@@ -170,3 +187,19 @@ class SnapshotManager(base.ManagerWithFind):
         body = {'metadata': metadata}
         return self._update("/snapshots/%s/metadata" % base.getid(snapshot),
                             body)
+
+    def manage(self, volume_id, ref, name=None, description=None,
+               metadata=None):
+        """Manage an existing snapshot."""
+        body = {'snapshot': {'volume_id': volume_id,
+                             'ref': ref,
+                             'name': name,
+                             'description': description,
+                             'metadata': metadata
+                             }
+                }
+        return self._create('/os-snapshot-manage', body, 'snapshot')
+
+    def unmanage(self, snapshot):
+        """Unmanage a snapshot."""
+        return self._action('os-unmanage', snapshot, None)

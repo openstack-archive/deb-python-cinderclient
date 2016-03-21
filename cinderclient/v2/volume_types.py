@@ -29,7 +29,8 @@ class VolumeType(base.Resource):
         """
         Provide a user-friendly accessor to os-volume-type-access:is_public
         """
-        return self._info.get("os-volume-type-access:is_public", 'N/A')
+        return self._info.get("os-volume-type-access:is_public",
+                              self._info.get("is_public", 'N/A'))
 
     def get_keys(self):
         """Get extra specs from a volume type.
@@ -107,7 +108,7 @@ class VolumeTypeManager(base.ManagerWithFind):
 
         :param volume_type: The name or ID of the :class:`VolumeType` to get.
         """
-        self._delete("/types/%s" % base.getid(volume_type))
+        return self._delete("/types/%s" % base.getid(volume_type))
 
     def create(self, name, description=None, is_public=True):
         """Creates a volume type.
