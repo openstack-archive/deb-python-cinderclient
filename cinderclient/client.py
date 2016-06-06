@@ -36,19 +36,17 @@ from keystoneclient.auth.identity import base
 from keystoneclient import discover
 import requests
 
+from cinderclient import api_versions
 from cinderclient import exceptions
 import cinderclient.extension
-from cinderclient.openstack.common import importutils
-from cinderclient.openstack.common.gettextutils import _
+from cinderclient._i18n import _
 from oslo_utils import encodeutils
+from oslo_utils import importutils
 from oslo_utils import strutils
 
 osprofiler_web = importutils.try_import("osprofiler.web")
 
-try:
-    import urlparse
-except ImportError:
-    import urllib.parse as urlparse
+import six.moves.urllib.parse as urlparse
 
 try:
     from eventlet import sleep
@@ -60,17 +58,17 @@ try:
 except ImportError:
     import simplejson as json
 
-# Python 2.5 compat fix
-if not hasattr(urlparse, 'parse_qsl'):
-    import cgi
-    urlparse.parse_qsl = cgi.parse_qsl
-
-_VALID_VERSIONS = ['v1', 'v2']
-
+_VALID_VERSIONS = ['v1', 'v2', 'v3']
+V3_SERVICE_TYPE = 'volumev3'
+V2_SERVICE_TYPE = 'volumev2'
+V1_SERVICE_TYPE = 'volume'
+SERVICE_TYPES = {'1': V1_SERVICE_TYPE,
+                 '2': V2_SERVICE_TYPE,
+                 '3': V3_SERVICE_TYPE}
 
 # tell keystoneclient that we can ignore the /v1|v2/{project_id} component of
 # the service catalog when doing discovery lookups
-for svc in ('volume', 'volumev2'):
+for svc in ('volume', 'volumev2', 'volumev3'):
     discover.add_catalog_discover_hack(svc, re.compile('/v[12]/\w+/?$'), '/')
 
 
@@ -89,7 +87,14 @@ def get_volume_api_from_url(url):
 
 class SessionClient(adapter.LegacyJsonAdapter):
 
+    def __init__(self, *args, **kwargs):
+        self.api_version = kwargs.pop('api_version', None)
+        self.api_version = self.api_version or api_versions.APIVersion()
+        super(SessionClient, self).__init__(*args, **kwargs)
+
     def request(self, *args, **kwargs):
+        kwargs.setdefault('headers', kwargs.get('headers', {}))
+        api_versions.update_headers(kwargs["headers"], self.api_version)
         kwargs.setdefault('authenticated', False)
         # Note(tpatil): The standard call raises errors from
         # keystoneclient, here we need to raise the cinderclient errors.
@@ -157,11 +162,12 @@ class HTTPClient(object):
                  service_name=None, volume_service_name=None,
                  bypass_url=None, retries=None,
                  http_log_debug=False, cacert=None,
-                 auth_system='keystone', auth_plugin=None):
+                 auth_system='keystone', auth_plugin=None, api_version=None):
         self.user = user
         self.password = password
         self.projectid = projectid
         self.tenant_id = tenant_id
+        self.api_version = api_version or api_versions.APIVersion()
 
         if auth_system and auth_system != 'keystone' and not auth_plugin:
             raise exceptions.AuthSystemNotFound(auth_system)
@@ -256,6 +262,7 @@ class HTTPClient(object):
             kwargs['headers']['Content-Type'] = 'application/json'
             kwargs['data'] = json.dumps(kwargs['body'])
             del kwargs['body']
+        api_versions.update_headers(kwargs["headers"], self.api_version)
 
         if self.timeout:
             kwargs.setdefault('timeout', self.timeout)
@@ -291,8 +298,9 @@ class HTTPClient(object):
             if self.projectid:
                 kwargs['headers']['X-Auth-Project-Id'] = self.projectid
             try:
-                resp, body = self.request(self.management_url + url, method,
-                                          **kwargs)
+                if not url.startswith(self.management_url):
+                    url = self.management_url + url
+                resp, body = self.request(url, method, **kwargs)
                 return resp, body
             except exceptions.BadRequest as e:
                 if attempts > self.retries:
@@ -536,7 +544,7 @@ def _construct_http_client(username=None, password=None, project_id=None,
                            auth_system='keystone', auth_plugin=None,
                            cacert=None, tenant_id=None,
                            session=None,
-                           auth=None,
+                           auth=None, api_version=None,
                            **kwargs):
 
     # Don't use sessions if third party plugin is used
@@ -548,6 +556,7 @@ def _construct_http_client(username=None, password=None, project_id=None,
                              service_type=service_type,
                              service_name=service_name,
                              region_name=region_name,
+                             api_version=api_version,
                              **kwargs)
     else:
         # FIXME(jamielennox): username and password are now optional. Need
@@ -575,10 +584,23 @@ def _construct_http_client(username=None, password=None, project_id=None,
                           )
 
 
+def _get_client_class_and_version(version):
+    if not isinstance(version, api_versions.APIVersion):
+        version = api_versions.get_api_version(version)
+    else:
+        api_versions.check_major_version(version)
+    if version.is_latest():
+        raise exceptions.UnsupportedVersion(
+            _("The version should be explicit, not latest."))
+    return version, importutils.import_class(
+        "cinderclient.v%s.client.Client" % version.ver_major)
+
+
 def get_client_class(version):
     version_map = {
         '1': 'cinderclient.v1.client.Client',
         '2': 'cinderclient.v2.client.Client',
+        '3': 'cinderclient.v3.client.Client',
     }
     try:
         client_path = version_map[str(version)]
@@ -604,7 +626,7 @@ def discover_extensions(version):
 
 def _discover_via_python_path():
     for (module_loader, name, ispkg) in pkgutil.iter_modules():
-        if name.endswith('python_cinderclient_ext'):
+        if name.endswith('cinderclient_ext'):
             if not hasattr(module_loader, 'load_module'):
                 # Python 2.6 compat: actually get an ImpImporter obj
                 module_loader = module_loader.find_module(name)
@@ -630,5 +652,28 @@ def _discover_via_contrib_path(version):
 
 
 def Client(version, *args, **kwargs):
-    client_class = get_client_class(version)
-    return client_class(*args, **kwargs)
+    """Initialize client object based on given version.
+
+    HOW-TO:
+    The simplest way to create a client instance is initialization with your
+    credentials::
+
+    .. code-block:: python
+
+        >>> from cinderclient import client
+        >>> cinder = client.Client(VERSION, USERNAME, PASSWORD,
+        ...                      PROJECT_ID, AUTH_URL)
+
+    Here ``VERSION`` can be a string or
+    ``cinderclient.api_versions.APIVersion`` obj. If you prefer string value,
+    you can use ``1`` (deprecated now), ``2``, or ``3.X``
+    (where X is a microversion).
+
+
+    Alternatively, you can create a client instance using the keystoneclient
+    session API. See "The cinderclient Python API" page at
+    python-cinderclient's doc.
+    """
+    api_version, client_class = _get_client_class_and_version(version)
+    return client_class(api_version=api_version,
+                        *args, **kwargs)

@@ -14,9 +14,9 @@ import os
 import time
 
 import six
-from tempest_lib.cli import base
-from tempest_lib.cli import output_parser
-from tempest_lib import exceptions
+from tempest.lib.cli import base
+from tempest.lib.cli import output_parser
+from tempest.lib import exceptions
 
 _CREDS_FILE = 'functional_creds.conf'
 
@@ -139,7 +139,7 @@ class ClientTestBase(base.ClientTestBase):
                       % (object_name, object_id, status, timeout))
 
     def check_object_deleted(self, object_name, object_id, timeout=60):
-        """Check that volume deleted successfully.
+        """Check that object deleted successfully.
 
         :param object_name: object name
         :param object_id: uuid4 id of an object

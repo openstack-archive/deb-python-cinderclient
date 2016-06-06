@@ -73,9 +73,39 @@ class VolumeBackupsTest(utils.TestCase):
         cs.assert_called('GET', '/backups/detail?sort=id')
         self._assert_request_id(lst)
 
+    def test_sorted_list_by_data_timestamp(self):
+        cs.backups.list(sort="data_timestamp")
+        cs.assert_called('GET', '/backups/detail?sort=data_timestamp')
+
     def test_delete(self):
         b = cs.backups.list()[0]
         del_back = b.delete()
+        cs.assert_called('DELETE',
+                         '/backups/76a17945-3c6f-435c-975b-b5685db10b62')
+        self._assert_request_id(del_back)
+        del_back = cs.backups.delete('76a17945-3c6f-435c-975b-b5685db10b62')
+        cs.assert_called('DELETE',
+                         '/backups/76a17945-3c6f-435c-975b-b5685db10b62')
+        self._assert_request_id(del_back)
+        del_back = cs.backups.delete(b)
+        cs.assert_called('DELETE',
+                         '/backups/76a17945-3c6f-435c-975b-b5685db10b62')
+        self._assert_request_id(del_back)
+
+    def test_force_delete_with_True_force_param_value(self):
+        """Tests delete backup with force parameter set to True"""
+        b = cs.backups.list()[0]
+        del_back = b.delete(force=True)
+        expected_body = {'os-force_delete': None}
+        cs.assert_called('POST',
+            '/backups/76a17945-3c6f-435c-975b-b5685db10b62/action',
+            expected_body)
+        self._assert_request_id(del_back)
+
+    def test_force_delete_with_false_force_param_vaule(self):
+        """To delete backup with force parameter set to False"""
+        b = cs.backups.list()[0]
+        del_back = b.delete(force=False)
         cs.assert_called('DELETE',
                          '/backups/76a17945-3c6f-435c-975b-b5685db10b62')
         self._assert_request_id(del_back)

@@ -28,6 +28,7 @@ from cinderclient.tests.unit.v2 import fakes
 from cinderclient.tests.unit.fixture_data import keystone_client
 
 
+@mock.patch.object(client, 'Client', fakes.FakeClient)
 class ShellTest(utils.TestCase):
 
     FAKE_ENV = {
@@ -48,10 +49,6 @@ class ShellTest(utils.TestCase):
 
         self.shell = shell.OpenStackCinderShell()
 
-        # HACK(bcwaldon): replace this when we start using stubs
-        self.old_get_client_class = client.get_client_class
-        client.get_client_class = lambda *_: fakes.FakeClient
-
         self.requests = self.useFixture(requests_mock_fixture.Fixture())
         self.requests.register_uri(
             'GET', keystone_client.BASE_URL,
@@ -66,18 +63,6 @@ class ShellTest(utils.TestCase):
 
         return Args(args)
 
-    def tearDown(self):
-        # For some methods like test_image_meta_bad_action we are
-        # testing a SystemExit to be thrown and object self.shell has
-        # no time to get instantiated, which is OK in this case, so
-        # we make sure the method is there before launching it.
-        if hasattr(self.shell, 'cs'):
-            self.shell.cs.clear_callstack()
-
-        # HACK(bcwaldon): replace this when we start using stubs
-        client.get_client_class = self.old_get_client_class
-        super(ShellTest, self).tearDown()
-
     def run_command(self, cmd):
         self.shell.main(cmd.split())
 
@@ -85,11 +70,6 @@ class ShellTest(utils.TestCase):
                       partial_body=None, **kwargs):
         return self.shell.cs.assert_called(method, url, body,
                                            partial_body, **kwargs)
-
-    def assert_called_anytime(self, method, url, body=None,
-                              partial_body=None):
-        return self.shell.cs.assert_called_anytime(method, url, body,
-                                                   partial_body)
 
     def test_list(self):
         self.run_command('list')
@@ -370,6 +350,26 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('POST', '/volumes', partial_body=expected)
         self.assert_called('GET', '/volumes/1234')
 
+    def test_upload_to_image(self):
+        expected = {'os-volume_upload_image': {'force': False,
+                                               'container_format': 'bare',
+                                               'disk_format': 'raw',
+                                               'image_name': 'test-image'}}
+        self.run_command('upload-to-image 1234 test-image')
+        self.assert_called_anytime('GET', '/volumes/1234')
+        self.assert_called_anytime('POST', '/volumes/1234/action',
+                                   body=expected)
+
+    def test_upload_to_image_force(self):
+        expected = {'os-volume_upload_image': {'force': 'True',
+                                               'container_format': 'bare',
+                                               'disk_format': 'raw',
+                                               'image_name': 'test-image'}}
+        self.run_command('upload-to-image --force=True 1234 test-image')
+        self.assert_called_anytime('GET', '/volumes/1234')
+        self.assert_called_anytime('POST', '/volumes/1234/action',
+                                   body=expected)
+
     def test_create_size_required_if_not_snapshot_or_clone(self):
         self.assertRaises(SystemExit, self.run_command, 'create')
 
@@ -573,8 +573,7 @@ class ShellTest(utils.TestCase):
 
     def test_reset_state_with_attach_status(self):
         self.run_command('reset-state --attach-status detached 1234')
-        expected = {'os-reset_status': {'status': 'available',
-                                        'attach_status': 'detached'}}
+        expected = {'os-reset_status': {'attach_status': 'detached'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_reset_state_with_attach_status_with_flag(self):
@@ -586,8 +585,7 @@ class ShellTest(utils.TestCase):
 
     def test_reset_state_with_reset_migration_status(self):
         self.run_command('reset-state --reset-migration-status 1234')
-        expected = {'os-reset_status': {'status': 'available',
-                                        'migration_status': 'none'}}
+        expected = {'os-reset_status': {'migration_status': 'none'}}
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_reset_state_multiple(self):
@@ -712,6 +710,20 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('GET', '/types/3')
         self.assert_called('POST', '/types/3/action',
                            body=expected)
+
+    def test_type_delete(self):
+        self.run_command('type-delete 1')
+        self.assert_called('DELETE', '/types/1')
+
+    def test_type_delete_multiple(self):
+        self.run_command('type-delete 1 3')
+        self.assert_called_anytime('DELETE', '/types/1')
+        self.assert_called('DELETE', '/types/3')
+
+    def test_type_delete_by_name(self):
+        self.run_command('type-delete test-type-1')
+        self.assert_called_anytime('GET', '/types?is_public=None')
+        self.assert_called('DELETE', '/types/1')
 
     def test_encryption_type_list(self):
         """
@@ -1202,6 +1214,10 @@ class ShellTest(utils.TestCase):
                'Container']
         mock_print_list.assert_called_once_with(mock.ANY, columns,
             sortby_index=None)
+
+    def test_backup_list_data_timestamp(self):
+        self.run_command('backup-list --sort data_timestamp')
+        self.assert_called('GET', '/backups/detail?sort=data_timestamp')
 
     def test_get_capabilities(self):
         self.run_command('get-capabilities host')

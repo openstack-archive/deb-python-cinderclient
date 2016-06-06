@@ -17,17 +17,14 @@
 Volume transfer interface (1.1 extension).
 """
 
-try:
-    from urllib import urlencode
-except ImportError:
-    from urllib.parse import urlencode
 import six
+from six.moves.urllib.parse import urlencode
+
 from cinderclient import base
 
 
 class VolumeTransfer(base.Resource):
     """Transfer a volume from one tenant to another"""
-    NAME_ATTR = "display_name"
 
     def __repr__(self):
         return "<VolumeTransfer: %s>" % self.id

@@ -15,10 +15,7 @@
 
 from datetime import datetime
 
-try:
-    import urlparse
-except ImportError:
-    import urllib.parse as urlparse
+import six.moves.urllib.parse as urlparse
 
 from cinderclient import client as base_client
 from cinderclient.tests.unit import fakes
@@ -186,10 +183,11 @@ def _stub_extend(id, new_size):
 
 class FakeClient(fakes.FakeClient, client.Client):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, api_version=None, *args, **kwargs):
         client.Client.__init__(self, 'username', 'password',
                                'project_id', 'auth_url',
                                extensions=kwargs.get('extensions'))
+        self.api_version = api_version
         self.client = FakeHTTPClient(**kwargs)
 
     def get_volume_api_version_from_endpoint(self):
@@ -235,11 +233,6 @@ class FakeHTTPClient(base_client.HTTPClient):
             "headers": headers,
         })
         return r, body
-
-        if hasattr(status, 'items'):
-            return utils.TestResponse(status), body
-        else:
-            return utils.TestResponse({"status": status}), body
 
     def get_volume_api_version_from_endpoint(self):
         magic_tuple = urlparse.urlsplit(self.management_url)
