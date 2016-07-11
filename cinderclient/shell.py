@@ -27,14 +27,12 @@ import sys
 
 import requests
 
+from cinderclient import api_versions
 from cinderclient import client
 from cinderclient import exceptions as exc
 from cinderclient import utils
 import cinderclient.auth_plugin
-from cinderclient.openstack.common import importutils
-from cinderclient.openstack.common.gettextutils import _
-from cinderclient.v1 import shell as shell_v1
-from cinderclient.v2 import shell as shell_v2
+from cinderclient._i18n import _
 
 from keystoneclient import discover
 from keystoneclient import session
@@ -43,13 +41,20 @@ from keystoneclient.auth.identity import v3 as v3_auth
 from keystoneclient.exceptions import DiscoveryFailure
 import six.moves.urllib.parse as urlparse
 from oslo_utils import encodeutils
+from oslo_utils import importutils
 from oslo_utils import strutils
 
 osprofiler_profiler = importutils.try_import("osprofiler.profiler")
 
-DEFAULT_OS_VOLUME_API_VERSION = "2"
+from cinderclient import _i18n
+# Enable i18n lazy translation
+_i18n.enable_lazy()
+
+DEFAULT_MAJOR_OS_VOLUME_API_VERSION = "2"
 DEFAULT_CINDER_ENDPOINT_TYPE = 'publicURL'
-DEFAULT_CINDER_SERVICE_TYPE = 'volumev2'
+V1_SHELL = 'cinderclient.v1.shell'
+V2_SHELL = 'cinderclient.v2.shell'
+V3_SHELL = 'cinderclient.v3.shell'
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -181,7 +186,8 @@ class OpenStackCinderShell(object):
                             default=utils.env('OS_VOLUME_API_VERSION',
                                               default=None),
                             help='Block Storage API version. '
-                            'Valid values are 1 or 2. '
+                            'Accepts X, X.Y (where X is major and Y is minor '
+                            'part).'
                             'Default=env[OS_VOLUME_API_VERSION].')
         parser.add_argument('--os_volume_api_version',
                             help=argparse.SUPPRESS)
@@ -388,13 +394,12 @@ class OpenStackCinderShell(object):
         self.subcommands = {}
         subparsers = parser.add_subparsers(metavar='<subcommand>')
 
-        try:
-            actions_module = {
-                '1.1': shell_v1,
-                '2': shell_v2,
-            }[version]
-        except KeyError:
-            actions_module = shell_v1
+        if version == '2':
+            actions_module = importutils.import_module(V2_SHELL)
+        elif version == '3':
+            actions_module = importutils.import_module(V3_SHELL)
+        else:
+            actions_module = importutils.import_module(V1_SHELL)
 
         self._find_actions(subparsers, actions_module)
         self._find_actions(subparsers, self)
@@ -491,19 +496,18 @@ class OpenStackCinderShell(object):
         self.options = options
 
         if not options.os_volume_api_version:
-            # Environment variable OS_VOLUME_API_VERSION was
-            # not set and '--os-volume-api-version' option doesn't
-            # specify a value.  Fall back to default.
-            options.os_volume_api_version = DEFAULT_OS_VOLUME_API_VERSION
-            api_version_input = False
+            api_version = api_versions.get_api_version(
+                DEFAULT_MAJOR_OS_VOLUME_API_VERSION)
+        else:
+            api_version = api_versions.get_api_version(
+                options.os_volume_api_version)
 
         # build available subcommands based on version
-        self.extensions = client.discover_extensions(
-            options.os_volume_api_version)
+        major_version_string = "%s" % api_version.ver_major
+        self.extensions = client.discover_extensions(major_version_string)
         self._run_extension_hooks('__pre_parse_args__')
 
-        subcommand_parser = self.get_subcommand_parser(
-            options.os_volume_api_version)
+        subcommand_parser = self.get_subcommand_parser(major_version_string)
         self.parser = subcommand_parser
 
         if options.help or not argv:
@@ -540,8 +544,7 @@ class OpenStackCinderShell(object):
             auth_plugin = None
 
         if not service_type:
-            service_type = DEFAULT_CINDER_SERVICE_TYPE
-            service_type = utils.get_service_type(args.func) or service_type
+            service_type = client.SERVICE_TYPES[major_version_string]
 
         # FIXME(usrleon): Here should be restrict for project id same as
         # for os_username or os_password but for compatibility it is not.
@@ -630,7 +633,7 @@ class OpenStackCinderShell(object):
 
         insecure = self.options.insecure
 
-        self.cs = client.Client(options.os_volume_api_version, os_username,
+        self.cs = client.Client(api_version, os_username,
                                 os_password, os_tenant_name, os_auth_url,
                                 region_name=os_region_name,
                                 tenant_id=os_tenant_id,
@@ -663,13 +666,6 @@ class OpenStackCinderShell(object):
         try:
             endpoint_api_version = \
                 self.cs.get_volume_api_version_from_endpoint()
-            if endpoint_api_version != options.os_volume_api_version:
-                msg = (("OpenStack Block Storage API version is set to %s "
-                        "but you are accessing a %s endpoint. "
-                        "Change its value through --os-volume-api-version "
-                        "or env[OS_VOLUME_API_VERSION].")
-                       % (options.os_volume_api_version, endpoint_api_version))
-                raise exc.InvalidAPIVersion(msg)
         except exc.UnsupportedVersion:
             endpoint_api_version = options.os_volume_api_version
             if api_version_input:
@@ -806,6 +802,9 @@ class OpenStackCinderShell(object):
         # first create a Keystone session
         cacert = self.options.os_cacert or None
         cert = self.options.os_cert or None
+        if cert and self.options.os_key:
+            cert = cert, self.options.os_key
+
         insecure = self.options.insecure or False
 
         if insecure:

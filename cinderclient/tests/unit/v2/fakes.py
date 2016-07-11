@@ -14,10 +14,7 @@
 
 from datetime import datetime
 
-try:
-    import urlparse
-except ImportError:
-    import urllib.parse as urlparse
+import six.moves.urllib.parse as urlparse
 
 from cinderclient import client as base_client
 from cinderclient.tests.unit import fakes
@@ -254,10 +251,11 @@ def _stub_extend(id, new_size):
 
 class FakeClient(fakes.FakeClient, client.Client):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, api_version=None, *args, **kwargs):
         client.Client.__init__(self, 'username', 'password',
                                'project_id', 'auth_url',
                                extensions=kwargs.get('extensions'))
+        self.api_version = api_version
         self.client = FakeHTTPClient(**kwargs)
 
     def get_volume_api_version_from_endpoint(self):
@@ -441,7 +439,8 @@ class FakeHTTPClient(base_client.HTTPClient):
         elif action == 'os-roll_detaching':
             assert body[action] is None
         elif action == 'os-reset_status':
-            assert 'status' in body[action]
+            assert ('status' or 'attach_status' or 'migration_status'
+                    in body[action])
         elif action == 'os-extend':
             assert list(body[action]) == ['new_size']
         elif action == 'os-migrate_volume':
@@ -465,6 +464,9 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert 'key' in body[action]
         elif action == 'os-show_image_metadata':
             assert body[action] is None
+        elif action == 'os-volume_upload_image':
+            assert 'image_name' in body[action]
+            _body = body
         else:
             raise AssertionError("Unexpected action: %s" % action)
         return (resp, {}, _body)
@@ -686,6 +688,12 @@ class FakeHTTPClient(base_client.HTTPClient):
         return(204, {}, None)
 
     def delete_types_1(self, **kw):
+        return (202, {}, None)
+
+    def delete_types_3_extra_specs_k(self, **kw):
+        return(204, {}, None)
+
+    def delete_types_3(self, **kw):
         return (202, {}, None)
 
     def put_types_1(self, **kw):
