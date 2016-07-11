@@ -1,8 +1,12 @@
-python-cinderclient (1:1.6.0-3) UNRELEASED; urgency=medium
+python-cinderclient (1:1.8.0-1) experimental; urgency=medium
 
+  [ Ondřej Nový ]
   * Standards-Version is 3.9.8 now (no change)
 
- -- Ondřej Nový <novy@ondrej.org>  Sat, 09 Apr 2016 19:26:11 +0200
+  [ Thomas Goirand ]
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 11 Jul 2016 16:23:17 +0200
 
 python-cinderclient (1:1.6.0-2) unstable; urgency=medium
 
