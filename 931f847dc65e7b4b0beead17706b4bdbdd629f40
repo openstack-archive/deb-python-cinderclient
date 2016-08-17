@@ -1,0 +1,11 @@
+Code-Review+1: Yuriy Nesenenko <ynesenenko@mirantis.com>
+Code-Review+1: Swami Reddy <swamireddy@gmail.com>
+Code-Review+2: Walter A. Boring IV (hemna) <walter.boring@hpe.com>
+Code-Review+2: Gorka Eguileor <geguileo@redhat.com>
+Workflow+1: Gorka Eguileor <geguileo@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 09 Aug 2016 10:52:54 +0000
+Reviewed-on: https://review.openstack.org/348667
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
