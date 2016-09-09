@@ -1,0 +1,8 @@
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Workflow+1: Sean McGinnis <sean.mcginnis@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 11 Mar 2016 21:48:32 +0000
+Reviewed-on: https://review.openstack.org/291884
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/stable/mitaka
