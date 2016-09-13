@@ -111,11 +111,28 @@ class Volume(base.Resource):
         return self.manager.show_image_metadata(self)
 
     def upload_to_image(self, force, image_name, container_format,
-                        disk_format, visibility, protected):
-        """Upload a volume to image service as an image."""
-        return self.manager.upload_to_image(self, force, image_name,
-                                            container_format, disk_format,
-                                            visibility, protected)
+                        disk_format, visibility=None,
+                        protected=None):
+        """Upload a volume to image service as an image.
+        :param force: Boolean to enables or disables upload of a volume that
+                      is attached to an instance.
+        :param image_name: The new image name.
+        :param container_format: Container format type.
+        :param disk_format: Disk format type.
+        :param visibility: The accessibility of image (allowed for
+                           3.1-latest).
+        :param protected: Boolean to decide whether prevents image from being
+                          deleted (allowed for 3.1-latest).
+        """
+        if self.manager.api_version >= api_versions.APIVersion("3.1"):
+            visibility = 'private' if visibility is None else visibility
+            protected = False if protected is None else protected
+            return self.manager.upload_to_image(self, force, image_name,
+                                                container_format, disk_format,
+                                                visibility, protected)
+        else:
+            return self.manager.upload_to_image(self, force, image_name,
+                                                container_format, disk_format)
 
     def force_delete(self):
         """Delete the specified volume ignoring its current state.
@@ -176,6 +193,12 @@ class Volume(base.Resource):
                                    availability_zone=availability_zone,
                                    metadata=metadata, bootable=bootable)
 
+    def list_manageable(self, host, detailed=True, marker=None, limit=None,
+                        offset=None, sort=None):
+        return self.manager.list_manageable(host, detailed=detailed,
+                                            marker=marker, limit=limit,
+                                            offset=offset, sort=sort)
+
     def unmanage(self, volume):
         """Unmanage a volume."""
         return self.manager.unmanage(volume)
@@ -197,7 +220,8 @@ class VolumeManager(base.ManagerWithFind):
     """Manage :class:`Volume` resources."""
     resource_class = Volume
 
-    def create(self, size, consistencygroup_id=None, snapshot_id=None,
+    def create(self, size, consistencygroup_id=None,
+               group_id=None, snapshot_id=None,
                source_volid=None, name=None, description=None,
                volume_type=None, user_id=None,
                project_id=None, availability_zone=None,
@@ -207,6 +231,7 @@ class VolumeManager(base.ManagerWithFind):
 
         :param size: Size of volume in GB
         :param consistencygroup_id: ID of the consistencygroup
+        :param group_id: ID of the group
         :param snapshot_id: ID of the snapshot
         :param name: Name of the volume
         :param description: Description of the volume
@@ -246,6 +271,9 @@ class VolumeManager(base.ManagerWithFind):
                            'source_replica': source_replica,
                            'multiattach': multiattach,
                            }}
+
+        if group_id:
+            body['volume']['group_id'] = group_id
 
         if scheduler_hints:
             body['OS-SCH-HNT:scheduler_hints'] = scheduler_hints
@@ -407,6 +435,7 @@ class VolumeManager(base.ManagerWithFind):
         return self._create("/volumes/%s/metadata" % base.getid(volume),
                             body, "metadata")
 
+    @api_versions.wraps("2.0")
     def delete_metadata(self, volume, keys):
         """Delete specified keys from volumes metadata.
 
@@ -416,10 +445,27 @@ class VolumeManager(base.ManagerWithFind):
         response_list = []
         for k in keys:
             resp, body = self._delete("/volumes/%s/metadata/%s" %
-                                      (base.getid(volume), k))
+                                     (base.getid(volume), k))
             response_list.append(resp)
 
         return common_base.ListWithMeta([], response_list)
+
+    @api_versions.wraps("3.15")
+    def delete_metadata(self, volume, keys):
+        """Delete specified keys from volumes metadata.
+
+        :param volume: The :class:`Volume`.
+        :param keys: A list of keys to be removed.
+        """
+        data = self._get("/volumes/%s/metadata" % base.getid(volume))
+        metadata = data._info.get("metadata", {})
+        if set(keys).issubset(metadata.keys()):
+            for k in keys:
+                metadata.pop(k)
+            body = {'metadata': metadata}
+            kwargs = {'headers': {'If-Match': data._checksum}}
+            return self._update("/volumes/%s/metadata" % base.getid(volume),
+                                body, **kwargs)
 
     def set_image_metadata(self, volume, metadata):
         """Set a volume's image metadata.
@@ -601,6 +647,14 @@ class VolumeManager(base.ManagerWithFind):
                            'bootable': bootable
                            }}
         return self._create('/os-volume-manage', body, 'volume')
+
+    @api_versions.wraps("3.8")
+    def list_manageable(self, host, detailed=True, marker=None, limit=None,
+                        offset=None, sort=None):
+        url = self._build_list_url("manageable_volumes", detailed=detailed,
+                                   search_opts={'host': host}, marker=marker,
+                                   limit=limit, offset=offset, sort=sort)
+        return self._list(url, "manageable-volumes")
 
     def unmanage(self, volume):
         """Unmanage a volume."""

@@ -12,7 +12,6 @@
 # limitations under the License.
 
 import mock
-
 import requests
 
 from cinderclient import client
@@ -24,18 +23,17 @@ fake_response = utils.TestResponse({
     "status_code": 200,
     "text": '{"hi": "there"}',
 })
-
-fake_response_empty = utils.TestResponse({
-    "status_code": 200,
-    "text": '{"access": {}}'
-})
-
 mock_request = mock.Mock(return_value=(fake_response))
-mock_request_empty = mock.Mock(return_value=(fake_response_empty))
+
+refused_response = utils.TestResponse({
+    "status_code": 400,
+    "text": '[Errno 111] Connection refused',
+})
+refused_mock_request = mock.Mock(return_value=(refused_response))
 
 bad_400_response = utils.TestResponse({
     "status_code": 400,
-    "text": '{"error": {"message": "n/a", "details": "Terrible!"}}',
+    "text": '',
 })
 bad_400_request = mock.Mock(return_value=(bad_400_response))
 
@@ -44,6 +42,12 @@ bad_401_response = utils.TestResponse({
     "text": '{"error": {"message": "FAILED!", "details": "DETAILS!"}}',
 })
 bad_401_request = mock.Mock(return_value=(bad_401_response))
+
+bad_413_response = utils.TestResponse({
+    "status_code": 413,
+    "headers": {"Retry-After": "1", "x-compute-request-id": "1234"},
+})
+bad_413_request = mock.Mock(return_value=(bad_413_response))
 
 bad_500_response = utils.TestResponse({
     "status_code": 500,
@@ -68,6 +72,7 @@ def get_authed_client(retries=0):
     cl = get_client(retries=retries)
     cl.management_url = "http://example.com"
     cl.auth_token = "token"
+    cl.get_service_url = mock.Mock(return_value="http://example.com")
     return cl
 
 
@@ -156,7 +161,44 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         test_get_call()
-        self.assertEqual(self.requests, [])
+        self.assertEqual([], self.requests)
+
+    def test_rate_limit_overlimit_exception(self):
+        cl = get_authed_client(retries=1)
+
+        self.requests = [bad_413_request,
+                         bad_413_request,
+                         mock_request]
+
+        def request(*args, **kwargs):
+            next_request = self.requests.pop(0)
+            return next_request(*args, **kwargs)
+
+        @mock.patch.object(requests, "request", request)
+        @mock.patch('time.time', mock.Mock(return_value=1234))
+        def test_get_call():
+            resp, body = cl.get("/hi")
+        self.assertRaises(exceptions.OverLimit, test_get_call)
+        self.assertEqual([mock_request], self.requests)
+
+    def test_rate_limit(self):
+        cl = get_authed_client(retries=1)
+
+        self.requests = [bad_413_request, mock_request]
+
+        def request(*args, **kwargs):
+            next_request = self.requests.pop(0)
+            return next_request(*args, **kwargs)
+
+        @mock.patch.object(requests, "request", request)
+        @mock.patch('time.time', mock.Mock(return_value=1234))
+        def test_get_call():
+            resp, body = cl.get("/hi")
+            return resp, body
+
+        resp, body = test_get_call()
+        self.assertEqual(200, resp.status_code)
+        self.assertEqual([], self.requests)
 
     def test_retry_limit(self):
         cl = get_authed_client(retries=1)
@@ -244,21 +286,10 @@ class ClientTest(utils.TestCase):
         cl = get_client()
 
         # response must not have x-server-management-url header
-        @mock.patch.object(requests, "request", mock_request_empty)
+        @mock.patch.object(requests, "request", mock_request)
         def test_auth_call():
             self.assertRaises(exceptions.AuthorizationFailure,
                               cl.authenticate)
-
-        test_auth_call()
-
-    def test_auth_not_implemented(self):
-        cl = get_client()
-
-        # response must not have x-server-management-url header
-        # {'hi': 'there'} is neither V2 or V3
-        @mock.patch.object(requests, "request", mock_request)
-        def test_auth_call():
-            self.assertRaises(NotImplementedError, cl.authenticate)
 
         test_auth_call()
 
@@ -277,4 +308,4 @@ class ClientTest(utils.TestCase):
             resp, body = cl.get("/hi")
 
         test_get_call()
-        self.assertEqual(self.requests, [])
+        self.assertEqual([], self.requests)

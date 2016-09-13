@@ -1,3 +1,14 @@
+python-cinderclient (1:1.9.0-1) experimental; urgency=medium
+
+  [ James Page ]
+  * New upstream release.
+  * Align (Build-)Depends with upstream.
+
+  [ Thomas Goirand ]
+  * Using OpenStack's Gerrit as VCS URLs.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 13 Sep 2016 09:53:50 +0200
+
 python-cinderclient (1:1.8.0-1) experimental; urgency=medium
 
   [ Ondřej Nový ]

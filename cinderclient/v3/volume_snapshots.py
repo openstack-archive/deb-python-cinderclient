@@ -15,6 +15,7 @@
 
 """Volume snapshot interface (v3 extension)."""
 
+from cinderclient import api_versions
 from cinderclient import base
 from cinderclient.openstack.common.apiclient import base as common_base
 
@@ -25,9 +26,9 @@ class Snapshot(base.Resource):
     def __repr__(self):
         return "<Snapshot: %s>" % self.id
 
-    def delete(self):
+    def delete(self, force=False):
         """Delete this snapshot."""
-        return self.manager.delete(self)
+        return self.manager.delete(self, force)
 
     def update(self, **kwargs):
         """Update the name or description for this snapshot."""
@@ -62,6 +63,12 @@ class Snapshot(base.Resource):
         """Manage an existing snapshot."""
         self.manager.manage(volume_id=volume_id, ref=ref, name=name,
                             description=description, metadata=metadata)
+
+    def list_manageable(self, host, detailed=True, marker=None, limit=None,
+                        offset=None, sort=None):
+        return self.manager.list_manageable(host, detailed=detailed,
+                                            marker=marker, limit=limit,
+                                            offset=offset, sort=sort)
 
     def unmanage(self, snapshot):
         """Unmanage a snapshot."""
@@ -118,12 +125,16 @@ class SnapshotManager(base.ManagerWithFind):
                                    limit=limit, sort=sort)
         return self._list(url, resource_type, limit=limit)
 
-    def delete(self, snapshot):
+    def delete(self, snapshot, force=False):
         """Delete a snapshot.
 
         :param snapshot: The :class:`Snapshot` to delete.
+        :param force: Allow delete in state other than error or available.
         """
-        return self._delete("/snapshots/%s" % base.getid(snapshot))
+        if force:
+            return self._action('os-force_delete', snapshot)
+        else:
+            return self._delete("/snapshots/%s" % base.getid(snapshot))
 
     def update(self, snapshot, **kwargs):
         """Update the name or description for a snapshot.
@@ -199,6 +210,14 @@ class SnapshotManager(base.ManagerWithFind):
                              }
                 }
         return self._create('/os-snapshot-manage', body, 'snapshot')
+
+    @api_versions.wraps("3.8")
+    def list_manageable(self, host, detailed=True, marker=None, limit=None,
+                        offset=None, sort=None):
+        url = self._build_list_url("manageable_snapshots", detailed=detailed,
+                                   search_opts={'host': host}, marker=marker,
+                                   limit=limit, offset=offset, sort=sort)
+        return self._list(url, "manageable-snapshots")
 
     def unmanage(self, snapshot):
         """Unmanage a snapshot."""

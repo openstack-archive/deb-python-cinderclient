@@ -249,6 +249,65 @@ def _stub_extend(id, new_size):
     return {'volume_id': '712f4980-5ac1-41e5-9383-390aa7c9f58b'}
 
 
+def _stub_server_versions():
+    return [
+        {
+            "status": "SUPPORTED",
+            "updated": "2015-07-30T11:33:21Z",
+            "links": [
+                {
+                    "href": "http://docs.openstack.org/",
+                    "type": "text/html",
+                    "rel": "describedby",
+                },
+                {
+                    "href": "http://localhost:8776/v1/",
+                    "rel": "self",
+                }
+            ],
+            "min_version": "",
+            "version": "",
+            "id": "v1.0",
+        },
+        {
+            "status": "SUPPORTED",
+            "updated": "2015-09-30T11:33:21Z",
+            "links": [
+                {
+                    "href": "http://docs.openstack.org/",
+                    "type": "text/html",
+                    "rel": "describedby",
+                },
+                {
+                    "href": "http://localhost:8776/v2/",
+                    "rel": "self",
+                }
+            ],
+            "min_version": "",
+            "version": "",
+            "id": "v2.0",
+        },
+        {
+            "status": "CURRENT",
+            "updated": "2016-04-01T11:33:21Z",
+            "links": [
+                {
+                    "href": "http://docs.openstack.org/",
+                    "type": "text/html",
+                    "rel": "describedby",
+                },
+                {
+                    "href": "http://localhost:8776/v3/",
+                    "rel": "self",
+                }
+            ],
+            "min_version": "3.0",
+            "version": "3.1",
+            "id": "v3.0",
+        }
+    ]
+
+
 class FakeClient(fakes.FakeClient, client.Client):
 
     def __init__(self, api_version=None, *args, **kwargs):
@@ -264,7 +323,7 @@ class FakeClient(fakes.FakeClient, client.Client):
 
 class FakeHTTPClient(base_client.HTTPClient):
 
-    def __init__(self, **kwargs):
+    def __init__(self, version_header=None, **kwargs):
         self.username = 'username'
         self.password = 'password'
         self.auth_url = 'auth_url'
@@ -272,6 +331,7 @@ class FakeHTTPClient(base_client.HTTPClient):
         self.management_url = 'http://10.0.2.15:8776/v2/fake'
         self.osapi_max_limit = 1000
         self.marker = None
+        self.version_header = version_header
 
     def _cs_request(self, url, method, **kwargs):
         # Check that certain things are called correctly
@@ -308,6 +368,8 @@ class FakeHTTPClient(base_client.HTTPClient):
         status, headers, body = getattr(self, callback)(**kwargs)
         # add fake request-id header
         headers['x-openstack-request-id'] = REQUEST_ID
+        if self.version_header:
+            headers['OpenStack-API-version'] = version_header
         r = utils.TestResponse({
             "status_code": status,
             "text": body,
@@ -356,6 +418,8 @@ class FakeHTTPClient(base_client.HTTPClient):
             assert 'status' in body['os-reset_status']
         elif action == 'os-update_snapshot_status':
             assert 'status' in body['os-update_snapshot_status']
+        elif action == 'os-force_delete':
+            assert body[action] is None
         elif action == 'os-unmanage':
             assert body[action] is None
         else:
@@ -408,6 +472,10 @@ class FakeHTTPClient(base_client.HTTPClient):
 
     def get_volumes_5678(self, **kw):
         r = {'volume': self.get_volumes_detail(id=5678)[2]['volumes'][0]}
+        return (200, {}, r)
+
+    def get_volumes_1234_metadata(self, **kw):
+        r = {"metadata": {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'}}
         return (200, {}, r)
 
     def get_volumes_1234_encryption(self, **kw):
@@ -643,7 +711,7 @@ class FakeHTTPClient(base_client.HTTPClient):
         return (200, {}, {'volume_type': {'id': 1,
                           'name': 'test-type-1',
                           'description': 'test_type-1-desc',
-                          'extra_specs': {}}})
+                          'extra_specs': {u'key': u'value'}}})
 
     def get_types_2(self, **kw):
         return (200, {}, {'volume_type': {'id': 2,
@@ -685,6 +753,9 @@ class FakeHTTPClient(base_client.HTTPClient):
         return (200, {}, {'extra_specs': {'k': 'v'}})
 
     def delete_types_1_extra_specs_k(self, **kw):
+        return(204, {}, None)
+
+    def delete_types_1_extra_specs_m(self, **kw):
         return(204, {}, None)
 
     def delete_types_1(self, **kw):
@@ -964,6 +1035,10 @@ class FakeHTTPClient(base_client.HTTPClient):
         return (200, {},
                 {'transfer': _stub_transfer(transfer1, base_uri, tenant_id)})
 
+    def get_with_base_url(self, url, **kw):
+        server_versions = _stub_server_versions()
+        return (200, {'versions': server_versions})
+
     #
     # Services
     #
@@ -1085,10 +1160,57 @@ class FakeHTTPClient(base_client.HTTPClient):
     def put_snapshots_1234_metadata(self, **kw):
         return (200, {}, {"metadata": {"key1": "val1", "key2": "val2"}})
 
+    def get_os_volume_manage(self, **kw):
+        vol_id = "volume-ffffffff-0000-ffff-0000-ffffffffffff"
+        vols = [{"size": 4, "safe_to_manage": False, "actual_size": 4.0,
+                 "reference": {"source-name": vol_id}},
+                {"size": 5, "safe_to_manage": True, "actual_size": 4.3,
+                 "reference": {"source-name": "myvol"}}]
+        return (200, {}, {"manageable-volumes": vols})
+
+    def get_os_volume_manage_detail(self, **kw):
+        vol_id = "volume-ffffffff-0000-ffff-0000-ffffffffffff"
+        vols = [{"size": 4, "reason_not_safe": "volume in use",
+                 "safe_to_manage": False, "extra_info": "qos_setting:high",
+                 "reference": {"source-name": vol_id},
+                 "actual_size": 4.0},
+                {"size": 5, "reason_not_safe": None, "safe_to_manage": True,
+                 "extra_info": "qos_setting:low", "actual_size": 4.3,
+                 "reference": {"source-name": "myvol"}}]
+        return (200, {}, {"manageable-volumes": vols})
+
     def post_os_volume_manage(self, **kw):
         volume = _stub_volume(id='1234')
         volume.update(kw['body']['volume'])
         return (202, {}, {'volume': volume})
+
+    def get_os_snapshot_manage(self, **kw):
+        snap_id = "snapshot-ffffffff-0000-ffff-0000-ffffffffffff"
+        snaps = [{"actual_size": 4.0, "size": 4,
+                 "safe_to_manage": False, "source_id_type": "source-name",
+                 "source_cinder_id": "00000000-ffff-0000-ffff-00000000",
+                 "reference": {"source-name": snap_id},
+                 "source_identifier": "volume-00000000-ffff-0000-ffff-000000"},
+                {"actual_size": 4.3, "reference": {"source-name": "mysnap"},
+                 "source_id_type": "source-name", "source_identifier": "myvol",
+                 "safe_to_manage": True, "source_cinder_id": None, "size": 5}]
+        return (200, {}, {"manageable-snapshots": snaps})
+
+    def get_os_snapshot_manage_detail(self, **kw):
+        snap_id = "snapshot-ffffffff-0000-ffff-0000-ffffffffffff"
+        snaps = [{"actual_size": 4.0, "size": 4,
+                 "safe_to_manage": False, "source_id_type": "source-name",
+                 "source_cinder_id": "00000000-ffff-0000-ffff-00000000",
+                 "reference": {"source-name": snap_id},
+                 "source_identifier": "volume-00000000-ffff-0000-ffff-000000",
+                 "extra_info": "qos_setting:high",
+                 "reason_not_safe": "snapshot in use"},
+                {"actual_size": 4.3, "reference": {"source-name": "mysnap"},
+                 "safe_to_manage": True, "source_cinder_id": None,
+                 "source_id_type": "source-name", "identifier": "mysnap",
+                 "source_identifier": "myvol", "size": 5,
+                 "extra_info": "qos_setting:low", "reason_not_safe": None}]
+        return (200, {}, {"manageable-snapshots": snaps})
 
     def post_os_snapshot_manage(self, **kw):
         snapshot = _stub_snapshot(id='1234', volume_id='volume_id1')

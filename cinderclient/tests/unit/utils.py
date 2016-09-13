@@ -40,9 +40,9 @@ class TestCase(testtools.TestCase):
             stderr = self.useFixture(fixtures.StringStream('stderr')).stream
             self.useFixture(fixtures.MonkeyPatch('sys.stderr', stderr))
 
-    def _assert_request_id(self, obj):
+    def _assert_request_id(self, obj, count=1):
         self.assertTrue(hasattr(obj, 'request_ids'))
-        self.assertEqual(REQUEST_ID, obj.request_ids)
+        self.assertEqual(REQUEST_ID * count, obj.request_ids)
 
     def assert_called_anytime(self, method, url, body=None,
                               partial_body=None):
@@ -73,8 +73,8 @@ class FixturedTestCase(TestCase):
             self.data_fixture = self.useFixture(fix)
 
     def assert_called(self, method, path, body=None):
-        self.assertEqual(self.requests.last_request.method, method)
-        self.assertEqual(self.requests.last_request.path_url, path)
+        self.assertEqual(method, self.requests.last_request.method)
+        self.assertEqual(path, self.requests.last_request.path_url)
 
         if body:
             req_data = self.requests.last_request.body
@@ -83,28 +83,37 @@ class FixturedTestCase(TestCase):
             if not isinstance(body, six.string_types):
                 # json load if the input body to match against is not a string
                 req_data = json.loads(req_data)
-            self.assertEqual(req_data, body)
+            self.assertEqual(body, req_data)
 
 
 class TestResponse(requests.Response):
-    """Class used to wrap requests.Response and provide some
-       convenience to initialize with a dict.
+    """Class used to wrap requests.Response.
+
+    Provides some convenience to initialize with a dict.
     """
 
     def __init__(self, data):
+        super(TestResponse, self).__init__()
+        self._content = None
         self._text = None
-        super(TestResponse, self)
+
         if isinstance(data, dict):
             self.status_code = data.get('status_code', None)
             self.headers = data.get('headers', None)
             self.reason = data.get('reason', '')
-            # Fake the text attribute to streamline Response creation
-            self._text = data.get('text', None)
+            # Fake text and content attributes to streamline Response creation
+            text = data.get('text', None)
+            self._content = text
+            self._text = text
         else:
             self.status_code = data
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    @property
+    def content(self):
+        return self._content
 
     @property
     def text(self):

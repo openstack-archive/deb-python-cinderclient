@@ -467,6 +467,8 @@ class Resource(RequestIdMixin):
         self._info = info
         self._add_details(info)
         self._loaded = loaded
+        if resp and hasattr(resp, "headers"):
+            self._checksum = resp.headers.get("Etag")
         self.setup()
         self.append_request_ids(resp)
 
@@ -506,6 +508,10 @@ class Resource(RequestIdMixin):
         else:
             return self.__dict__[k]
 
+    @property
+    def api_version(self):
+        return self.manager.api_version
+
     def get(self):
         # set_loaded() first ... so if we have to bail, we know we tried.
         self.set_loaded(True)
@@ -523,6 +529,9 @@ class Resource(RequestIdMixin):
         if not isinstance(other, self.__class__):
             return False
         return self._info == other._info
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def is_loaded(self):
         return self._loaded

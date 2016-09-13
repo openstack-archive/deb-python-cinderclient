@@ -16,6 +16,9 @@ import re
 import sys
 
 import fixtures
+import keystoneauth1.exceptions as ks_exc
+from keystoneauth1.exceptions import DiscoveryFailure
+from keystoneauth1 import session
 import mock
 import pkg_resources
 import requests_mock
@@ -24,15 +27,15 @@ from six import moves
 from testtools import matchers
 
 import cinderclient
+from cinderclient import api_versions
 from cinderclient import exceptions
 from cinderclient import auth_plugin
 from cinderclient import shell
+from cinderclient.tests.unit import fake_actions_module
 from cinderclient.tests.unit.test_auth_plugins import mock_http_request
 from cinderclient.tests.unit.test_auth_plugins import requested_headers
 from cinderclient.tests.unit.fixture_data import keystone_client
 from cinderclient.tests.unit import utils
-import keystoneclient.exceptions as ks_exc
-from keystoneclient.exceptions import DiscoveryFailure
 
 
 class ShellTest(utils.TestCase):
@@ -103,24 +106,28 @@ class ShellTest(utils.TestCase):
     @requests_mock.Mocker()
     def test_version_discovery(self, mocker):
         _shell = shell.OpenStackCinderShell()
+        sess = session.Session()
 
         os_auth_url = "https://WrongDiscoveryResponse.discovery.com:35357/v2.0"
         self.register_keystone_auth_fixture(mocker, os_auth_url)
-        self.assertRaises(DiscoveryFailure, _shell._discover_auth_versions,
-                          None, auth_url=os_auth_url)
+
+        self.assertRaises(DiscoveryFailure,
+                          _shell._discover_auth_versions,
+                          sess,
+                          auth_url=os_auth_url)
 
         os_auth_url = "https://DiscoveryNotSupported.discovery.com:35357/v2.0"
         self.register_keystone_auth_fixture(mocker, os_auth_url)
-        v2_url, v3_url = _shell._discover_auth_versions(
-            None, auth_url=os_auth_url)
-        self.assertEqual(v2_url, os_auth_url, "Expected v2 url")
+        v2_url, v3_url = _shell._discover_auth_versions(sess,
+                                                        auth_url=os_auth_url)
+        self.assertEqual(os_auth_url, v2_url, "Expected v2 url")
         self.assertIsNone(v3_url, "Expected no v3 url")
 
         os_auth_url = "https://DiscoveryNotSupported.discovery.com:35357/v3.0"
         self.register_keystone_auth_fixture(mocker, os_auth_url)
-        v2_url, v3_url = _shell._discover_auth_versions(
-            None, auth_url=os_auth_url)
-        self.assertEqual(v3_url, os_auth_url, "Expected v3 url")
+        v2_url, v3_url = _shell._discover_auth_versions(sess,
+                                                        auth_url=os_auth_url)
+        self.assertEqual(os_auth_url, v3_url, "Expected v3 url")
         self.assertIsNone(v2_url, "Expected no v2 url")
 
     @requests_mock.Mocker()
@@ -142,18 +149,27 @@ class ShellTest(utils.TestCase):
         for count in range(1, 4):
             self.list_volumes_on_service(count)
 
-    @mock.patch('keystoneclient.adapter.Adapter.get_token',
-                side_effect=ks_exc.ConnectionRefused())
-    @mock.patch('keystoneclient.discover.Discover',
-                side_effect=ks_exc.ConnectionRefused())
+    @mock.patch('keystoneauth1.identity.v2.Password')
+    @mock.patch('keystoneauth1.adapter.Adapter.get_token',
+                side_effect=ks_exc.ConnectFailure())
+    @mock.patch('keystoneauth1.discover.Discover',
+                side_effect=ks_exc.ConnectFailure())
     @mock.patch('sys.stdin', side_effect=mock.MagicMock)
     @mock.patch('getpass.getpass', return_value='password')
     def test_password_prompted(self, mock_getpass, mock_stdin, mock_discover,
-                               mock_token):
+                               mock_token, mock_password):
         self.make_env(exclude='OS_PASSWORD')
         _shell = shell.OpenStackCinderShell()
-        self.assertRaises(ks_exc.ConnectionRefused, _shell.main, ['list'])
+        self.assertRaises(ks_exc.ConnectFailure, _shell.main, ['list'])
         mock_getpass.assert_called_with('OS Password: ')
+        # Verify that Password() is called with value of param 'password'
+        # equal to mock_getpass.return_value.
+        mock_password.assert_called_with(
+            self.FAKE_ENV['OS_AUTH_URL'],
+            password=mock_getpass.return_value,
+            tenant_id='',
+            tenant_name=self.FAKE_ENV['OS_TENANT_NAME'],
+            username=self.FAKE_ENV['OS_USERNAME'])
 
     @mock.patch.object(requests, "request")
     @mock.patch.object(pkg_resources, "iter_entry_points")
@@ -214,7 +230,18 @@ class ShellTest(utils.TestCase):
 
         self.assertEqual(False, _shell.cs.client.verify_cert)
 
-    @mock.patch('keystoneclient.session.Session.__init__',
+    @mock.patch.object(cinderclient.client.SessionClient, 'authenticate',
+                       side_effect=exceptions.Unauthorized('No'))
+    def test_session_client_debug_logger(self, mock_session):
+        _shell = shell.OpenStackCinderShell()
+        # This "fails" but instantiates the client.
+        self.assertRaises(exceptions.CommandError, _shell.main,
+                          ['--debug', 'list'])
+        # In case of SessionClient when --debug switch is specified
+        # 'keystoneauth' logger should be initialized.
+        self.assertEqual('keystoneauth', _shell.cs.client.logger.name)
+
+    @mock.patch('keystoneauth1.session.Session.__init__',
                 side_effect=RuntimeError())
     def test_http_client_with_cert(self, mock_session):
         _shell = shell.OpenStackCinderShell()
@@ -225,7 +252,7 @@ class ShellTest(utils.TestCase):
         self.assertRaises(RuntimeError, _shell.main, args)
         mock_session.assert_called_once_with(cert='minnie', verify=mock.ANY)
 
-    @mock.patch('keystoneclient.session.Session.__init__',
+    @mock.patch('keystoneauth1.session.Session.__init__',
                 side_effect=RuntimeError())
     def test_http_client_with_cert_and_key(self, mock_session):
         _shell = shell.OpenStackCinderShell()
@@ -279,3 +306,172 @@ class CinderClientArgumentParserTest(utils.TestCase):
                             help=argparse.SUPPRESS)
 
         self.assertRaises(SystemExit, parser.parse_args, ['--test'])
+
+
+class TestLoadVersionedActions(utils.TestCase):
+
+    def test_load_versioned_actions(self):
+        parser = cinderclient.shell.CinderClientArgumentParser()
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.0"), False, [])
+        self.assertIn('fake-action', shell.subcommands.keys())
+        self.assertEqual(
+            "fake_action 3.0 to 3.1",
+            shell.subcommands['fake-action'].get_default('func')())
+
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.2"), False, [])
+        self.assertIn('fake-action', shell.subcommands.keys())
+        self.assertEqual(
+            "fake_action 3.2 to 3.3",
+            shell.subcommands['fake-action'].get_default('func')())
+
+        self.assertIn('fake-action2', shell.subcommands.keys())
+        self.assertEqual(
+            "fake_action2",
+            shell.subcommands['fake-action2'].get_default('func')())
+
+    def test_load_versioned_actions_not_in_version_range(self):
+        parser = cinderclient.shell.CinderClientArgumentParser()
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion('3.10000'), False, [])
+        self.assertNotIn('fake-action', shell.subcommands.keys())
+        self.assertIn('fake-action2', shell.subcommands.keys())
+
+    def test_load_versioned_actions_unsupported_input(self):
+        parser = cinderclient.shell.CinderClientArgumentParser()
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        self.assertRaises(exceptions.UnsupportedAttribute,
+                          shell._find_actions, subparsers, fake_actions_module,
+                          api_versions.APIVersion('3.6'), False,
+                          ['another-fake-action', '--foo'])
+
+    def test_load_versioned_actions_with_help(self):
+        parser = cinderclient.shell.CinderClientArgumentParser()
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        with mock.patch.object(subparsers, 'add_parser') as mock_add_parser:
+            shell._find_actions(subparsers, fake_actions_module,
+                                api_versions.APIVersion("3.1"), True, [])
+            self.assertIn('fake-action', shell.subcommands.keys())
+            expected_help = ("help message (Supported by API versions "
+                             "%(start)s - %(end)s)") % {
+                'start': '3.0', 'end': '3.3'}
+            expected_desc = ("help message\n\n    "
+                            "This will not show up in help message\n    ")
+            mock_add_parser.assert_any_call(
+                'fake-action',
+                help=expected_help,
+                description=expected_desc,
+                add_help=False,
+                formatter_class=cinderclient.shell.OpenStackHelpFormatter)
+
+    def test_load_versioned_actions_with_help_on_latest(self):
+        parser = cinderclient.shell.CinderClientArgumentParser()
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        with mock.patch.object(subparsers, 'add_parser') as mock_add_parser:
+            shell._find_actions(subparsers, fake_actions_module,
+                                api_versions.APIVersion("3.latest"), True, [])
+            self.assertIn('another-fake-action', shell.subcommands.keys())
+            expected_help = (" (Supported by API versions %(start)s - "
+                             "%(end)s)%(hint)s") % {
+                'start': '3.6', 'end': '3.latest',
+                'hint': cinderclient.shell.HINT_HELP_MSG}
+            mock_add_parser.assert_any_call(
+                'another-fake-action',
+                help=expected_help,
+                description='',
+                add_help=False,
+                formatter_class=cinderclient.shell.OpenStackHelpFormatter)
+
+    @mock.patch.object(cinderclient.shell.CinderClientArgumentParser,
+                       'add_argument')
+    def test_load_versioned_actions_with_args(self, mock_add_arg):
+        parser = cinderclient.shell.CinderClientArgumentParser(add_help=False)
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.1"), False, [])
+        self.assertIn('fake-action2', shell.subcommands.keys())
+        mock_add_arg.assert_has_calls([
+            mock.call('-h', '--help', action='help', help='==SUPPRESS=='),
+            mock.call('--foo')])
+
+    @mock.patch.object(cinderclient.shell.CinderClientArgumentParser,
+                       'add_argument')
+    def test_load_versioned_actions_with_args2(self, mock_add_arg):
+        parser = cinderclient.shell.CinderClientArgumentParser(add_help=False)
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.4"), False, [])
+        self.assertIn('fake-action2', shell.subcommands.keys())
+        mock_add_arg.assert_has_calls([
+            mock.call('-h', '--help', action='help', help='==SUPPRESS=='),
+            mock.call('--bar', help="bar help")])
+
+    @mock.patch.object(cinderclient.shell.CinderClientArgumentParser,
+                       'add_argument')
+    def test_load_versioned_actions_with_args_not_in_version_range(
+            self, mock_add_arg):
+        parser = cinderclient.shell.CinderClientArgumentParser(add_help=False)
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.10000"), False, [])
+        self.assertIn('fake-action2', shell.subcommands.keys())
+        mock_add_arg.assert_has_calls([
+            mock.call('-h', '--help', action='help', help='==SUPPRESS==')])
+
+    @mock.patch.object(cinderclient.shell.CinderClientArgumentParser,
+                       'add_argument')
+    def test_load_versioned_actions_with_args_and_help(self, mock_add_arg):
+        parser = cinderclient.shell.CinderClientArgumentParser(add_help=False)
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.4"), True, [])
+        mock_add_arg.assert_has_calls([
+            mock.call('-h', '--help', action='help', help='==SUPPRESS=='),
+            mock.call('--bar',
+                      help="bar help (Supported by API versions"
+                           " 3.3 - 3.4)")])
+
+    @mock.patch.object(cinderclient.shell.CinderClientArgumentParser,
+                       'add_argument')
+    def test_load_actions_with_versioned_args(self, mock_add_arg):
+        parser = cinderclient.shell.CinderClientArgumentParser(add_help=False)
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        shell = cinderclient.shell.OpenStackCinderShell()
+        shell.subcommands = {}
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.6"), False, [])
+        self.assertIn(mock.call('--foo', help="first foo"),
+                      mock_add_arg.call_args_list)
+        self.assertNotIn(mock.call('--foo', help="second foo"),
+                         mock_add_arg.call_args_list)
+
+        mock_add_arg.reset_mock()
+
+        shell._find_actions(subparsers, fake_actions_module,
+                            api_versions.APIVersion("3.9"), False, [])
+        self.assertNotIn(mock.call('--foo', help="first foo"),
+                         mock_add_arg.call_args_list)
+        self.assertIn(mock.call('--foo', help="second foo"),
+                      mock_add_arg.call_args_list)

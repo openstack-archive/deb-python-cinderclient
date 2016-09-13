@@ -15,6 +15,7 @@
 
 import fixtures
 import mock
+import ddt
 from requests_mock.contrib import fixture as requests_mock_fixture
 from six.moves.urllib import parse
 
@@ -22,12 +23,14 @@ from cinderclient import client
 from cinderclient import exceptions
 from cinderclient import shell
 from cinderclient.v2 import volumes
+from cinderclient.v2 import volume_backups
 from cinderclient.v2 import shell as test_shell
 from cinderclient.tests.unit import utils
 from cinderclient.tests.unit.v2 import fakes
 from cinderclient.tests.unit.fixture_data import keystone_client
 
 
+@ddt.ddt
 @mock.patch.object(client, 'Client', fakes.FakeClient)
 class ShellTest(utils.TestCase):
 
@@ -399,6 +402,16 @@ class ShellTest(utils.TestCase):
         self.assert_called_anytime('DELETE', '/volumes/1234')
         self.assert_called('DELETE', '/volumes/5678')
 
+    def test_delete_with_cascade_true(self):
+        self.run_command('delete 1234 --cascade')
+        self.assert_called('DELETE', '/volumes/1234?cascade=True')
+        self.run_command('delete --cascade 1234')
+        self.assert_called('DELETE', '/volumes/1234?cascade=True')
+
+    def test_delete_with_cascade_with_invalid_value(self):
+        self.assertRaises(SystemExit, self.run_command,
+                          'delete 1234 --cascade 1234')
+
     def test_backup(self):
         self.run_command('backup-create 1234')
         self.assert_called('POST', '/backups')
@@ -424,16 +437,33 @@ class ShellTest(utils.TestCase):
         self.run_command('backup-restore 1234')
         self.assert_called('POST', '/backups/1234/restore')
 
+    def test_restore_with_name(self):
+        self.run_command('backup-restore 1234 --name restore_vol')
+        expected = {'restore': {'volume_id': None, 'name': 'restore_vol'}}
+        self.assert_called('POST', '/backups/1234/restore',
+                           body=expected)
+
+    def test_restore_with_name_error(self):
+        self.assertRaises(exceptions.CommandError, self.run_command,
+                          'backup-restore 1234 --volume fake_vol --name '
+                          'restore_vol')
+
+    @ddt.data('backup_name', '1234')
+    @mock.patch('cinderclient.v3.shell._find_backup')
     @mock.patch('cinderclient.utils.print_dict')
     @mock.patch('cinderclient.utils.find_volume')
-    def test_do_backup_restore(self,
+    def test_do_backup_restore_with_name(self,
+                               value,
                                mock_find_volume,
-                               mock_print_dict):
+                               mock_print_dict,
+                               mock_find_backup):
         backup_id = '1234'
         volume_id = '5678'
+        name = None
         input = {
-            'backup': backup_id,
-            'volume': volume_id
+            'backup': value,
+            'volume': volume_id,
+            'name': None
         }
 
         args = self._make_args(input)
@@ -442,10 +472,18 @@ class ShellTest(utils.TestCase):
             mock_find_volume.return_value = volumes.Volume(self,
                                                            {'id': volume_id},
                                                            loaded = True)
+            mock_find_backup.return_value = volume_backups.VolumeBackup(
+                self,
+                {'id': backup_id},
+                loaded = True)
             test_shell.do_backup_restore(self.cs, args)
+            mock_find_backup.assert_called_once_with(
+                self.cs,
+                value)
             mocked_restore.assert_called_once_with(
-                input['backup'],
-                volume_id)
+                backup_id,
+                volume_id,
+                name)
             self.assertTrue(mock_print_dict.called)
 
     def test_record_export(self):
@@ -673,6 +711,13 @@ class ShellTest(utils.TestCase):
                          '--is-public=False')
         self.assert_called('POST', '/types', body=expected)
 
+    def test_type_create_with_invalid_bool(self):
+        self.assertRaises(ValueError,
+                          self.run_command,
+                          ('type-create test-type-3 '
+                          '--description=test_type-3-desc '
+                          '--is-public=invalid_bool'))
+
     def test_type_update(self):
         expected = {'volume_type': {'name': 'test-type-1',
                                     'description': 'test_type-1-desc',
@@ -681,6 +726,13 @@ class ShellTest(utils.TestCase):
                          '--description=test_type-1-desc '
                          '--is-public=False 1')
         self.assert_called('PUT', '/types/1', body=expected)
+
+    def test_type_update_with_invalid_bool(self):
+        self.assertRaises(ValueError,
+                          self.run_command,
+                          'type-update --name test-type-1 '
+                          '--description=test_type-1-desc '
+                          '--is-public=invalid_bool 1')
 
     def test_type_access_list(self):
         self.run_command('type-access-list --volume-type 3')
@@ -946,16 +998,43 @@ class ShellTest(utils.TestCase):
         self.assert_called('POST', '/volumes/1234/action', body=expected)
 
     def test_snapshot_delete(self):
+        """Tests delete snapshot without force parameter"""
         self.run_command('snapshot-delete 1234')
         self.assert_called('DELETE', '/snapshots/1234')
+
+    def test_snapshot_delete_multiple(self):
+        """Tests delete multiple snapshots without force parameter"""
+        self.run_command('snapshot-delete 5678 1234')
+        self.assert_called_anytime('DELETE', '/snapshots/5678')
+        self.assert_called('DELETE', '/snapshots/1234')
+
+    def test_force_snapshot_delete(self):
+        """Tests delete snapshot with default force parameter value(True)"""
+        self.run_command('snapshot-delete 1234 --force')
+        expected_body = {'os-force_delete': None}
+        self.assert_called('POST',
+                           '/snapshots/1234/action',
+                           expected_body)
+
+    def test_force_snapshot_delete_multiple(self):
+        """
+        Tests delete multiple snapshots with force parameter
+
+        Snapshot delete with force parameter allows deleting snapshot of a
+        volume when its status is other than "available" or "error".
+        """
+        self.run_command('snapshot-delete 5678 1234 --force')
+        expected_body = {'os-force_delete': None}
+        self.assert_called_anytime('POST',
+                                   '/snapshots/5678/action',
+                                   expected_body)
+        self.assert_called_anytime('POST',
+                                   '/snapshots/1234/action',
+                                   expected_body)
 
     def test_quota_delete(self):
         self.run_command('quota-delete 1234')
         self.assert_called('DELETE', '/os-quota-sets/1234')
-
-    def test_snapshot_delete_multiple(self):
-        self.run_command('snapshot-delete 5678')
-        self.assert_called('DELETE', '/snapshots/5678')
 
     def test_volume_manage(self):
         self.run_command('manage host1 some_fake_name '
@@ -1035,6 +1114,18 @@ class ShellTest(utils.TestCase):
                                'metadata': {'k1': 'v1', 'k2': 'v2'},
                                'bootable': False}}
         self.assert_called_anytime('POST', '/os-volume-manage', body=expected)
+
+    def test_volume_manageable_list(self):
+        self.run_command('manageable-list fakehost')
+        self.assert_called('GET', '/os-volume-manage/detail?host=fakehost')
+
+    def test_volume_manageable_list_details(self):
+        self.run_command('manageable-list fakehost --detailed True')
+        self.assert_called('GET', '/os-volume-manage/detail?host=fakehost')
+
+    def test_volume_manageable_list_no_details(self):
+        self.run_command('manageable-list fakehost --detailed False')
+        self.assert_called('GET', '/os-volume-manage?host=fakehost')
 
     def test_volume_unmanage(self):
         self.run_command('unmanage 1234')
@@ -1247,6 +1338,18 @@ class ShellTest(utils.TestCase):
                                  }}
         self.assert_called_anytime('POST', '/os-snapshot-manage',
                                    body=expected)
+
+    def test_snapshot_manageable_list(self):
+        self.run_command('snapshot-manageable-list fakehost')
+        self.assert_called('GET', '/os-snapshot-manage/detail?host=fakehost')
+
+    def test_snapshot_manageable_list_details(self):
+        self.run_command('snapshot-manageable-list fakehost --detailed True')
+        self.assert_called('GET', '/os-snapshot-manage/detail?host=fakehost')
+
+    def test_snapshot_manageable_list_no_details(self):
+        self.run_command('snapshot-manageable-list fakehost --detailed False')
+        self.assert_called('GET', '/os-snapshot-manage?host=fakehost')
 
     def test_snapshot_unmanage(self):
         self.run_command('snapshot-unmanage 1234')

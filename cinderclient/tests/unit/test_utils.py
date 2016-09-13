@@ -17,6 +17,7 @@ import sys
 import mock
 from six import moves
 
+from cinderclient import api_versions
 from cinderclient import exceptions
 from cinderclient import utils
 from cinderclient import base
@@ -59,6 +60,17 @@ class FakeManager(base.ManagerWithFind):
 
     def list(self, search_opts):
         return common_base.ListWithMeta(self.resources, fakes.REQUEST_ID)
+
+
+class FakeManagerWithApi(base.Manager):
+
+    @api_versions.wraps('3.1')
+    def return_api_version(self):
+        return '3.1'
+
+    @api_versions.wraps('3.2')
+    def return_api_version(self):
+        return '3.2'
 
 
 class FakeDisplayResource(object):
@@ -221,12 +233,16 @@ class PrintListTestCase(test_utils.TestCase):
         # Output should be sorted by the first key (a)
         self.assertEqual("""\
 +---+-----+
-| a |  b  |
+| a | b   |
 +---+-----+
 | 1 | c d |
-| 3 |  a  |
+| 3 | a   |
 +---+-----+
 """, cso.read())
+
+    def test_unicode_key_value_to_string(self):
+        expected = {u'key': u'\u043f\u043f\u043f\u043f\u043f'}
+        self.assertEqual(expected, utils.unicode_key_value_to_string(expected))
 
 
 class PrintDictTestCase(test_utils.TestCase):
@@ -237,12 +253,12 @@ class PrintDictTestCase(test_utils.TestCase):
             utils.print_dict(d)
         self.assertEqual("""\
 +----------+---------------+
-| Property |     Value     |
+| Property | Value         |
 +----------+---------------+
-|    a     |       A       |
-|    b     |       B       |
-|    c     |       C       |
-|    d     | test carriage |
-|          |     return    |
+| a        | A             |
+| b        | B             |
+| c        | C             |
+| d        | test carriage |
+|          |  return       |
 +----------+---------------+
 """, cso.read())

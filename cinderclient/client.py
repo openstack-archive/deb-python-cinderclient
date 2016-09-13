@@ -30,10 +30,10 @@ import pkgutil
 import re
 import six
 
-from keystoneclient import access
-from keystoneclient import adapter
-from keystoneclient.auth.identity import base
-from keystoneclient import discover
+from keystoneauth1 import access
+from keystoneauth1 import adapter
+from keystoneauth1.identity import base
+from keystoneauth1 import discover
 import requests
 
 from cinderclient import api_versions
@@ -85,11 +85,23 @@ def get_volume_api_from_url(url):
     raise exceptions.UnsupportedVersion(msg)
 
 
+def _log_request_id(logger, resp, service_name):
+    request_id = resp.headers.get('x-openstack-request-id')
+    if request_id:
+        logger.debug('%(method)s call to %(service_type)s for %(url)s '
+                     'used request id %(response_request_id)s',
+                     {'method': resp.request.method,
+                      'service_type': service_name,
+                      'url': resp.url, 'response_request_id': request_id})
+
+
 class SessionClient(adapter.LegacyJsonAdapter):
 
     def __init__(self, *args, **kwargs):
         self.api_version = kwargs.pop('api_version', None)
         self.api_version = self.api_version or api_versions.APIVersion()
+        self.retries = kwargs.pop('retries', 0)
+        self._logger = logging.getLogger(__name__)
         super(SessionClient, self).__init__(*args, **kwargs)
 
     def request(self, *args, **kwargs):
@@ -97,11 +109,16 @@ class SessionClient(adapter.LegacyJsonAdapter):
         api_versions.update_headers(kwargs["headers"], self.api_version)
         kwargs.setdefault('authenticated', False)
         # Note(tpatil): The standard call raises errors from
-        # keystoneclient, here we need to raise the cinderclient errors.
+        # keystoneauth, here we need to raise the cinderclient errors.
         raise_exc = kwargs.pop('raise_exc', True)
         resp, body = super(SessionClient, self).request(*args,
                                                         raise_exc=False,
                                                         **kwargs)
+
+        # if service name is None then use service_type for logging
+        service = self.service_name or self.service_type
+        _log_request_id(self._logger, resp, service)
+
         if raise_exc and resp.status_code >= 400:
             raise exceptions.from_response(resp, body)
 
@@ -110,7 +127,17 @@ class SessionClient(adapter.LegacyJsonAdapter):
     def _cs_request(self, url, method, **kwargs):
         # this function is mostly redundant but makes compatibility easier
         kwargs.setdefault('authenticated', True)
-        return self.request(url, method, **kwargs)
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                return self.request(url, method, **kwargs)
+            except exceptions.OverLimit as overlim:
+                if attempts > self.retries or overlim.retry_after < 1:
+                    raise
+                msg = "Retrying after %s seconds." % overlim.retry_after
+                self._logger.debug(msg)
+                sleep(overlim.retry_after)
 
     def get(self, url, **kwargs):
         return self._cs_request(url, 'GET', **kwargs)
@@ -123,6 +150,11 @@ class SessionClient(adapter.LegacyJsonAdapter):
 
     def delete(self, url, **kwargs):
         return self._cs_request(url, 'DELETE', **kwargs)
+
+    def _get_base_url(self):
+        endpoint = self.get_endpoint()
+        base_url = '/'.join(endpoint.split('/')[:3]) + '/'
+        return base_url
 
     def get_volume_api_version_from_endpoint(self):
         try:
@@ -149,6 +181,16 @@ class SessionClient(adapter.LegacyJsonAdapter):
         raise AttributeError('There is no service catalog for this type of '
                              'auth plugin.')
 
+    def _cs_request_base_url(self, url, method, **kwargs):
+        base_url = self._get_base_url(**kwargs)
+        return self._cs_request(
+            base_url + url,
+            method,
+            **kwargs)
+
+    def get_with_base_url(self, url, **kwargs):
+        return self._cs_request_base_url(url, 'GET', **kwargs)
+
 
 class HTTPClient(object):
 
@@ -162,7 +204,8 @@ class HTTPClient(object):
                  service_name=None, volume_service_name=None,
                  bypass_url=None, retries=None,
                  http_log_debug=False, cacert=None,
-                 auth_system='keystone', auth_plugin=None, api_version=None):
+                 auth_system='keystone', auth_plugin=None, api_version=None,
+                 logger=None):
         self.user = user
         self.password = password
         self.projectid = projectid
@@ -205,7 +248,7 @@ class HTTPClient(object):
         self.auth_system = auth_system
         self.auth_plugin = auth_plugin
 
-        self._logger = logging.getLogger(__name__)
+        self._logger = logger or logging.getLogger(__name__)
 
     def _safe_header(self, name, value):
         if name in HTTPClient.SENSITIVE_HEADERS:
@@ -250,6 +293,10 @@ class HTTPClient(object):
             resp.headers,
             resp.text)
 
+        # if service name is None then use service_type for logging
+        service = self.service_name or self.service_type
+        _log_request_id(self._logger, resp, service)
+
     def request(self, url, method, **kwargs):
         kwargs.setdefault('headers', kwargs.get('headers', {}))
         kwargs['headers']['User-Agent'] = self.USER_AGENT
@@ -260,8 +307,7 @@ class HTTPClient(object):
 
         if 'body' in kwargs:
             kwargs['headers']['Content-Type'] = 'application/json'
-            kwargs['data'] = json.dumps(kwargs['body'])
-            del kwargs['body']
+            kwargs['data'] = json.dumps(kwargs.pop('body'))
         api_versions.update_headers(kwargs["headers"], self.api_version)
 
         if self.timeout:
@@ -313,6 +359,13 @@ class HTTPClient(object):
                 # First reauth. Discount this attempt.
                 attempts -= 1
                 auth_attempts += 1
+                continue
+            except exceptions.OverLimit as overlim:
+                if attempts > self.retries or overlim.retry_after < 1:
+                    raise
+                msg = "Retrying after %s seconds." % overlim.retry_after
+                self._logger.debug(msg)
+                sleep(overlim.retry_after)
                 continue
             except exceptions.ClientException as e:
                 if attempts > self.retries:
@@ -373,7 +426,7 @@ class HTTPClient(object):
         if resp.status_code == 200:  # content must always present
             try:
                 self.auth_url = url
-                self.auth_ref = access.AccessInfo.factory(resp, body)
+                self.auth_ref = access.create(resp=resp, body=body)
                 self.service_catalog = self.auth_ref.service_catalog
 
                 if extract_token:
@@ -381,7 +434,7 @@ class HTTPClient(object):
 
                 management_url = self.service_catalog.url_for(
                     region_name=self.region_name,
-                    endpoint_type=self.endpoint_type,
+                    interface=self.endpoint_type,
                     service_type=self.service_type,
                     service_name=self.service_name)
                 self.management_url = management_url.rstrip('/')
@@ -390,7 +443,10 @@ class HTTPClient(object):
                 print("Found more than one valid endpoint. Use a more "
                       "restrictive filter")
                 raise
-            except KeyError:
+            except ValueError:
+                # ValueError is raised when you pass an invalid response to
+                # access.create. This should never happen in reality if the
+                # status code is 200.
                 raise exceptions.AuthorizationFailure()
             except exceptions.EndpointNotFound:
                 print("Could not find any suitable endpoint. Correct region?")
@@ -547,8 +603,8 @@ def _construct_http_client(username=None, password=None, project_id=None,
                            auth=None, api_version=None,
                            **kwargs):
 
-    # Don't use sessions if third party plugin is used
-    if session and not auth_plugin:
+    # Don't use sessions if third party plugin or bypass_url being used
+    if session and not auth_plugin and not bypass_url:
         kwargs.setdefault('user_agent', 'python-cinderclient')
         kwargs.setdefault('interface', endpoint_type)
         return SessionClient(session=session,
@@ -556,11 +612,13 @@ def _construct_http_client(username=None, password=None, project_id=None,
                              service_type=service_type,
                              service_name=service_name,
                              region_name=region_name,
+                             retries=retries,
                              api_version=api_version,
                              **kwargs)
     else:
         # FIXME(jamielennox): username and password are now optional. Need
         # to test that they were provided in this mode.
+        logger = kwargs.get('logger')
         return HTTPClient(username,
                           password,
                           projectid=project_id,
@@ -581,6 +639,8 @@ def _construct_http_client(username=None, password=None, project_id=None,
                           cacert=cacert,
                           auth_system=auth_system,
                           auth_plugin=auth_plugin,
+                          logger=logger,
+                          api_version=api_version
                           )
 
 

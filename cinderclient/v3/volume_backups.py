@@ -16,6 +16,7 @@
 """
 Volume Backups interface (v3 extension).
 """
+from cinderclient import api_versions
 from cinderclient import base
 from cinderclient.openstack.common.apiclient import base as common_base
 
@@ -32,6 +33,10 @@ class VolumeBackup(base.Resource):
 
     def reset_state(self, state):
         return self.manager.reset_state(self, state)
+
+    def update(self, **kwargs):
+        """Update the name or description for this backup."""
+        return self.manager.update(self, **kwargs)
 
 
 class VolumeBackupManager(base.ManagerWithFind):
@@ -126,3 +131,16 @@ class VolumeBackupManager(base.ManagerWithFind):
         self.run_hooks('modify_body_for_update', body, 'backup-record')
         resp, body = self.api.client.post("/backups/import_record", body=body)
         return common_base.DictWithMeta(body['backup'], resp)
+
+    @api_versions.wraps("3.9")
+    def update(self, backup, **kwargs):
+        """Update the name or description for a backup.
+
+        :param backup: The :class:`Backup` to update.
+        """
+        if not kwargs:
+            return
+
+        body = {"backup": kwargs}
+
+        return self._update("/backups/%s" % base.getid(backup), body)

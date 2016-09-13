@@ -13,11 +13,14 @@
 
 from requests import Response
 
+from cinderclient import api_versions
 from cinderclient import base
+from cinderclient.v3 import client
 from cinderclient import exceptions
 from cinderclient.openstack.common.apiclient import base as common_base
 from cinderclient.v1 import volumes
 from cinderclient.tests.unit import utils
+from cinderclient.tests.unit import test_utils
 from cinderclient.tests.unit.v1 import fakes
 
 
@@ -30,6 +33,8 @@ REQUEST_ID = 'req-test-request-id'
 def create_response_obj_with_header():
     resp = Response()
     resp.headers['x-openstack-request-id'] = REQUEST_ID
+    resp.headers['Etag'] = 'd5103bf7b26ff0310200d110da3ed186'
+    resp.status_code = 200
     return resp
 
 
@@ -58,7 +63,7 @@ class BaseTest(utils.TestCase):
         r2 = base.Resource(None, {'id': 1, 'name': 'hello'})
         self.assertEqual(r1, r2)
 
-        # Two resoruces of different types: never equal
+        # Two resources of different types: never equal
         r1 = base.Resource(None, {'id': 1})
         r2 = volumes.Volume(None, {'id': 1})
         self.assertNotEqual(r1, r2)
@@ -86,6 +91,13 @@ class BaseTest(utils.TestCase):
         resp_obj = create_response_obj_with_header()
         r = base.Resource(None, {"name": "1"}, resp=resp_obj)
         self.assertEqual([REQUEST_ID], r.request_ids)
+
+    def test_api_version(self):
+        version = api_versions.APIVersion('3.1')
+        api = client.Client(api_version=version)
+        manager = test_utils.FakeManagerWithApi(api)
+        r1 = base.Resource(manager, {'id': 1})
+        self.assertEqual(version, r1.api_version)
 
 
 class ListWithMetaTest(utils.TestCase):

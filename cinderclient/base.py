@@ -26,7 +26,6 @@ import os
 import six
 from six.moves.urllib import parse
 
-from cinderclient import api_versions
 from cinderclient import exceptions
 from cinderclient.openstack.common.apiclient import base as common_base
 from cinderclient import utils
@@ -35,11 +34,15 @@ from cinderclient import utils
 # Valid sort directions and client sort keys
 SORT_DIR_VALUES = ('asc', 'desc')
 SORT_KEY_VALUES = ('id', 'status', 'size', 'availability_zone', 'name',
-                   'bootable', 'created_at')
+                   'bootable', 'created_at', 'reference')
 # Mapping of client keys to actual sort keys
 SORT_KEY_MAPPINGS = {'name': 'display_name'}
 # Additional sort keys for resources
-SORT_KEY_ADD_VALUES = {'backups': ('data_timestamp', ), }
+SORT_KEY_ADD_VALUES = {
+    'backups': ('data_timestamp', ),
+    'messages': ('resource_type', 'event_id', 'resource_uuid',
+                 'message_level', 'guaranteed_until', 'request_id'),
+}
 
 Resource = common_base.Resource
 
@@ -63,12 +66,11 @@ class Manager(common_base.HookableMixin):
     resource_class = None
 
     def __init__(self, api):
-        self._api_version = api_versions.APIVersion()
         self.api = api
 
     @property
     def api_version(self):
-        return self._api_version
+        return self.api.api_version
 
     def _list(self, url, response_key, obj_class=None, body=None,
               limit=None, items=None):
@@ -128,7 +130,7 @@ class Manager(common_base.HookableMixin):
 
     def _build_list_url(self, resource_type, detailed=True, search_opts=None,
                         marker=None, limit=None, sort_key=None, sort_dir=None,
-                        sort=None):
+                        sort=None, offset=None):
 
         if search_opts is None:
             search_opts = {}
@@ -157,6 +159,9 @@ class Manager(common_base.HookableMixin):
             if sort_dir:
                 query_params['sort_dir'] = self._format_sort_dir_param(
                     sort_dir)
+
+        if offset:
+            query_params['offset'] = offset
 
         # Transform the dict to a sequence of two-element tuples in fixed
         # order, then the encoded string will be consistent in Python 2&3.
@@ -323,7 +328,7 @@ class Manager(common_base.HookableMixin):
 
     def _update(self, url, body, response_key=None, **kwargs):
         self.run_hooks('modify_body_for_update', body, **kwargs)
-        resp, body = self.api.client.put(url, body=body)
+        resp, body = self.api.client.put(url, body=body, **kwargs)
         if response_key:
             return self.resource_class(self, body[response_key], loaded=True,
                                        resp=resp)
@@ -334,6 +339,14 @@ class Manager(common_base.HookableMixin):
         # not possible to return None so returning DictWithMeta for all cases.
         body = body or {}
         return common_base.DictWithMeta(body, resp)
+
+    def _get_with_base_url(self, url, response_key=None):
+        resp, body = self.api.client.get_with_base_url(url)
+        if response_key:
+            return [self.resource_class(self, res, loaded=True)
+                    for res in body[response_key] if res]
+        else:
+            return self.resource_class(self, body, loaded=True)
 
 
 class ManagerWithFind(six.with_metaclass(abc.ABCMeta, Manager)):
