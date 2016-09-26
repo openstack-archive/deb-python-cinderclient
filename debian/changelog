@@ -1,3 +1,10 @@
+python-cinderclient (1:1.9.0-2) UNRELEASED; urgency=medium
+
+  * d/s/options: extend-diff-ignore of .gitreview
+  * d/control: Use correct branch in Vcs-* fields
+
+ -- Ondřej Nový <onovy@debian.org>  Mon, 26 Sep 2016 19:08:13 +0200
+
 python-cinderclient (1:1.9.0-1) experimental; urgency=medium
 
   [ James Page ]
