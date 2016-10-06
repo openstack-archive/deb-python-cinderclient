@@ -1,0 +1,14 @@
+Code-Review+1: Rushi Agrawal <rushi.openstack@gmail.com>
+Code-Review+1: Swami Reddy <swamireddy@gmail.com>
+Code-Review+1: Pandiyan <maestropandy@gmail.com>
+Code-Review+1: Yuriy Nesenenko <ynesenenko@mirantis.com>
+Code-Review+1: Dirk Mueller <dirk@dmllr.de>
+Code-Review+2: Ivan Kolodyazhny <e0ne@e0ne.info>
+Code-Review+2: Mike Perez <thingee@gmail.com>
+Workflow+1: Mike Perez <thingee@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 05 Oct 2016 23:35:28 +0000
+Reviewed-on: https://review.openstack.org/345573
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
