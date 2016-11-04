@@ -1,0 +1,9 @@
+Code-Review+2: Jay Bryant <jsbryant@us.ibm.com>
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Workflow+1: Sean McGinnis <sean.mcginnis@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 04 Nov 2016 15:10:45 +0000
+Reviewed-on: https://review.openstack.org/393610
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
