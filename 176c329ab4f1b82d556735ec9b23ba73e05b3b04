@@ -1,0 +1,9 @@
+Code-Review+2: Michal Dulko <michal.dulko@intel.com>
+Code-Review+2: Duncan Thomas <duncan.thomas@gmail.com>
+Workflow+1: Michal Dulko <michal.dulko@intel.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 25 Nov 2016 15:14:09 +0000
+Reviewed-on: https://review.openstack.org/402511
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
