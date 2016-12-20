@@ -1,8 +1,14 @@
-python-cinderclient (1:1.9.0-3) UNRELEASED; urgency=medium
+python-cinderclient (1:1.9.0-3) unstable; urgency=medium
 
+  * Team upload.
+
+  [ Ondřej Nový ]
   * Bumped debhelper compat version to 10
 
- -- Ondřej Nový <onovy@debian.org>  Thu, 24 Nov 2016 00:04:35 +0100
+  [ Ondřej Kobližek ]
+  * Fix test_version_discovery test (Closes: #848752)
+
+ -- Ondřej Kobližek <koblizeko@gmail.com>  Tue, 20 Dec 2016 13:12:42 +0100
 
 python-cinderclient (1:1.9.0-2) unstable; urgency=medium
 

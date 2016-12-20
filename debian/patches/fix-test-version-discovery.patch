@@ -1,0 +1,31 @@
+Description: Fix test_version_discovery test
+ Something changed in requests/urllib3 library and now it sends
+ requests with url in a lower-case. It affects test_version_discovery
+ test because we use url in camel-case.
+ This patch changes test url to lower-case to be compatible with old
+ and new behaviours.
+Forwarded: https://bugs.launchpad.net/python-cinderclient/+bug/1643874
+Author: Ondřej Kobližek <koblizeko@gmail.com>
+
+--- a/cinderclient/tests/unit/fixture_data/keystone_client.py
++++ b/cinderclient/tests/unit/fixture_data/keystone_client.py
+@@ -247,7 +247,7 @@
+         context.headers["X-Subject-Token"] = token_id
+         context.status_code = 201
+         return token_data
+-    elif "WrongDiscoveryResponse.discovery.com" in request.url:
++    elif "wrongdiscoveryresponse.discovery.com" in request.url:
+         return str(WRONG_VERSION_RESPONSE)
+     else:
+         context.status_code = 500
+--- a/cinderclient/tests/unit/test_shell.py
++++ b/cinderclient/tests/unit/test_shell.py
+@@ -108,7 +108,7 @@
+         _shell = shell.OpenStackCinderShell()
+         sess = session.Session()
+ 
+-        os_auth_url = "https://WrongDiscoveryResponse.discovery.com:35357/v2.0"
++        os_auth_url = "https://wrongdiscoveryresponse.discovery.com:35357/v2.0"
+         self.register_keystone_auth_fixture(mocker, os_auth_url)
+ 
+         self.assertRaises(DiscoveryFailure,
