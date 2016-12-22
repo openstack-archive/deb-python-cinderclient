@@ -1,8 +1,14 @@
-python-cinderclient (1:1.9.0-3) UNRELEASED; urgency=medium
+python-cinderclient (1:1.9.0-3) unstable; urgency=medium
 
+  [ Ondřej Nový ]
   * Bumped debhelper compat version to 10
 
- -- Ondřej Nový <onovy@debian.org>  Thu, 24 Nov 2016 00:04:35 +0100
+  [ Thomas Goirand ]
+  * Disable one of the asserts in
+    cinderclient.tests.unit.test_shell.ShellTest.test_version_discovery
+    (Closes: #848752).
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 22 Dec 2016 17:27:12 +0100
 
 python-cinderclient (1:1.9.0-2) unstable; urgency=medium
 
