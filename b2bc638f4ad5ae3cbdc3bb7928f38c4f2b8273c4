@@ -1,0 +1,9 @@
+Code-Review+2: Eric Harney <eharney@redhat.com>
+Code-Review+2: Gorka Eguileor <geguileo@redhat.com>
+Workflow+1: Gorka Eguileor <geguileo@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 19 Jan 2017 10:50:05 +0000
+Reviewed-on: https://review.openstack.org/420849
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
