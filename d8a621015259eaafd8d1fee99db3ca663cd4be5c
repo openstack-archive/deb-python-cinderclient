@@ -1,0 +1,10 @@
+Code-Review+2: Gorka Eguileor <geguileo@redhat.com>
+Code-Review+2: Ivan Kolodyazhny <e0ne@e0ne.info>
+Code-Review+1: wangxiyuan <wangxiyuan@huawei.com>
+Workflow+1: Gorka Eguileor <geguileo@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 23 Jan 2017 16:43:40 +0000
+Reviewed-on: https://review.openstack.org/415194
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
