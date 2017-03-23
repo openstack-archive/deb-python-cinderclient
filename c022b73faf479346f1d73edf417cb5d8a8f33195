@@ -1,0 +1,10 @@
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Code-Review+2: Ivan Kolodyazhny <e0ne@e0ne.info>
+Workflow+1: Ivan Kolodyazhny <e0ne@e0ne.info>
+Code-Review+1: Kyrylo Romanenko <kromanenko@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 16 Mar 2017 12:08:58 +0000
+Reviewed-on: https://review.openstack.org/444264
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master

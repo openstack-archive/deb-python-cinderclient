@@ -1,0 +1,10 @@
+Code-Review+2: Jay Bryant <jungleboyj@electronicjungle.net>
+Code-Review+1: Michael Dovgal <mdovgal@mirantis.com>
+Code-Review+2: Gorka Eguileor <geguileo@redhat.com>
+Workflow+1: Gorka Eguileor <geguileo@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 28 Feb 2017 11:46:01 +0000
+Reviewed-on: https://review.openstack.org/432159
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
