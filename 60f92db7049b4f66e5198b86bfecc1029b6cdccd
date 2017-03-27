@@ -1,0 +1,9 @@
+Code-Review+2: Walter A. Boring IV (hemna) <waboring@hemna.com>
+Code-Review+2: John Griffith <john.griffith8@gmail.com>
+Workflow+1: John Griffith <john.griffith8@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 27 Mar 2017 16:49:44 +0000
+Reviewed-on: https://review.openstack.org/427143
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
