@@ -1,0 +1,17 @@
+Code-Review+1: Dinesh Bhor <dinesh.bhor@nttdata.com>
+Code-Review+1: wangxiyuan <wangxiyuan@huawei.com>
+Code-Review+1: WangBinbin <bbwang5827@fiberhome.com>
+Code-Review+1: wanghao <sxmatch1986@gmail.com>
+Code-Review+1: Michael Dovgal <mdovgal@mirantis.com>
+Code-Review+1: Jeremy Zhang <zhangjun_inspur@163.com>
+Code-Review+1: qtlu <qtlu@fiberhome.com>
+Code-Review+1: lihaijing <lihaijing@fiberhome.com>
+Code-Review+2: Eric Harney <eharney@redhat.com>
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Workflow+1: Sean McGinnis <sean.mcginnis@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 29 Mar 2017 21:32:19 +0000
+Reviewed-on: https://review.openstack.org/447392
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
