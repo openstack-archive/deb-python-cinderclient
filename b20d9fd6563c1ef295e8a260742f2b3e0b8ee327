@@ -1,0 +1,9 @@
+Code-Review+2: Ivan Kolodyazhny <e0ne@e0ne.info>
+Code-Review+2: John Griffith <john.griffith8@gmail.com>
+Workflow+1: John Griffith <john.griffith8@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 06 May 2017 08:48:14 +0000
+Reviewed-on: https://review.openstack.org/462204
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/stable/newton
