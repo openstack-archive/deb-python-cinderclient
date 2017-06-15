@@ -1,0 +1,9 @@
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Code-Review+2: Gorka Eguileor <geguileo@redhat.com>
+Workflow+1: Gorka Eguileor <geguileo@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 15 Jun 2017 16:39:50 +0000
+Reviewed-on: https://review.openstack.org/473385
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
