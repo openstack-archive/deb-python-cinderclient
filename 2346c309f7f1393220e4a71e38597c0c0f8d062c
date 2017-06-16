@@ -1,0 +1,10 @@
+Code-Review+1: TommyLike <tommylikehu@gmail.com>
+Code-Review+2: Eric Harney <eharney@redhat.com>
+Code-Review+2: Mike Perez <thingee@gmail.com>
+Workflow+1: Mike Perez <thingee@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 16 Jun 2017 22:43:41 +0000
+Reviewed-on: https://review.openstack.org/450052
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
