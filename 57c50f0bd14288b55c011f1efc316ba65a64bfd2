@@ -1,0 +1,9 @@
+Code-Review+2: Scott DAngelo <scott.dangelo@gmail.com>
+Code-Review+2: xing-yang <xing.yang@emc.com>
+Workflow+1: xing-yang <xing.yang@emc.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 20 Jun 2017 19:14:42 +0000
+Reviewed-on: https://review.openstack.org/473901
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
