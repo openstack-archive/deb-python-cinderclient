@@ -1,0 +1,10 @@
+Code-Review+2: Sean McGinnis <sean.mcginnis@gmail.com>
+Code-Review+1: TommyLike <tommylikehu@gmail.com>
+Code-Review+2: Scott DAngelo <scott.dangelo@gmail.com>
+Workflow+1: Scott DAngelo <scott.dangelo@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 10 Jul 2017 18:58:58 +0000
+Reviewed-on: https://review.openstack.org/445886
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
