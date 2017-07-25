@@ -1,0 +1,9 @@
+Code-Review+2: Eric Harney <eharney@redhat.com>
+Code-Review+2: Jay Bryant <jungleboyj@electronicjungle.net>
+Workflow+1: Jay Bryant <jungleboyj@electronicjungle.net>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 25 Jul 2017 00:33:24 +0000
+Reviewed-on: https://review.openstack.org/475919
+Project: openstack/deb-python-cinderclient
+Branch: refs/heads/master
