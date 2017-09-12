@@ -1,5 +1,0 @@
----
-fixes:
-  - The mountpoint argument was ignored when creating an attachment
-    and now has been fixed.
-    [Bug `1675973 <https://bugs.launchpad.net/bugs/1675973>`_]
